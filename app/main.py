@@ -234,15 +234,15 @@ async def chat_proxy(request: Request, path: str):
     except Exception as e:
         return {"error": f"Chat service unavailable: {str(e)}"}, 503
 
-# IDE completions streaming proxy — must be BEFORE chat proxy to avoid buffering
+# IDE agent streaming proxy → ide_agent_service (RG_Axtention_IDE)
 @app.api_route("/api/v1/ide/{path:path}", methods=["POST"])
 @edge_capture_decorator("gateway", "ide_proxy")
 async def ide_proxy(request: Request, path: str):
-    """Streaming proxy for local IDE completions → chat_service /ide/*"""
+    """Streaming proxy for IDE agent loop + completions → ide_agent_service"""
     import asyncio
 
-    chat_service_url = "http://chat_service:8000"
-    url = f"{chat_service_url}/ide/{path}"
+    ide_agent_url = os.environ.get("GATEWAY_IDE_AGENT_URL", "http://ide_agent_service:8000")
+    url = f"{ide_agent_url}/api/v1/ide/{path}"
 
     headers = dict(request.headers)
     headers.pop("host", None)
