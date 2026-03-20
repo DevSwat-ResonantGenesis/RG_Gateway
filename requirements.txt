@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+httpx
+pydantic[email]
+pydantic-settings
+psutil
+redis
+redis[hiredis]
+python-multipart
+asyncpg
+PyJWT
