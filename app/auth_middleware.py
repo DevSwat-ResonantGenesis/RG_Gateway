@@ -261,7 +261,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             
             request.state.user_id = dev_user_id
             request.state.role = request.headers.get("x-role", "user")
-            request.state.plan = request.headers.get("x-plan", "developer")
+            request.state.plan = request.headers.get("x-plan", "free")
             request.state.org_id = request.headers.get("x-org-id", "dev-org")
             
             response = await call_next(request)
@@ -296,7 +296,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             user_id = data.get("user_id")
             org_id = data.get("org_id") or user_id
             user_role = data.get("role", "user")
-            user_plan = data.get("plan", "developer")
+            user_plan = data.get("plan", "free")
 
             if not data.get("valid") or not user_id:
                 return add_cors_headers(Response(status_code=401, content=b"Invalid API key"), request)
