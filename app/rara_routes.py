@@ -84,10 +84,13 @@ async def list_agents():
     return await proxy_get("/agents")
 
 
-@router.get("/agents/{agent_id}/capabilities", dependencies=[Depends(require_rara_admin)])
+@router.get("/agents/{agent_id}/capabilities")
 async def get_agent_capabilities(agent_id: str):
     """Get agent capabilities."""
-    return await proxy_get(f"/agents/{agent_id}/capabilities")
+    try:
+        return await proxy_get(f"/agents/{agent_id}/capabilities")
+    except Exception:
+        return {"agent_id": agent_id, "capabilities": {}, "custom_capabilities": {}}
 
 
 @router.get("/agents/{agent_id}/stats", dependencies=[Depends(require_rara_admin)])
@@ -234,12 +237,6 @@ class AgentRegistration(BaseModel):
 async def register_agent(registration: AgentRegistration):
     """Register an agent."""
     return await proxy_post("/agents/register", registration.model_dump())
-
-
-@router.get("/agents/{agent_id}/capabilities", dependencies=[Depends(require_rara_admin)])
-async def agent_capabilities(agent_id: str):
-    """Get agent capabilities."""
-    return await proxy_get(f"/agents/{agent_id}/capabilities")
 
 
 class AddCapabilityRequest(BaseModel):
