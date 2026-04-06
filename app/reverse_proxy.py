@@ -18,7 +18,6 @@ from fastapi import Request, Response
 
 from .config import SERVICE_MAP
 
-V8_GATEWAY_SECRET = os.getenv("GATEWAY_SECRET", "v8-gw-internal-2026")
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ HOP_BY_HOP_HEADERS = frozenset({
 # Internal Docker hostnames that should never be exposed to clients
 INTERNAL_HOSTNAMES = frozenset({
     "agent_engine_service", "auth_service", "chat_service", "memory_service",
-    "llm_service", "cognitive_service", "storage_service", "ide_platform_service"
+    "llm_service", "storage_service"
 })
 
 
@@ -79,10 +78,6 @@ async def proxy(service: str, path: str, request: Request) -> Response:
         headers["x-org-id"] = request.state.org_id
     if hasattr(request.state, "role") and request.state.role:
         headers["x-user-role"] = request.state.role
-
-    # Inject V8 gateway secret for V8 service authentication
-    if service == "v8-api":
-        headers["X-Gateway-Secret"] = V8_GATEWAY_SECRET
 
     try:
         async with httpx.AsyncClient(timeout=60.0, follow_redirects=False) as client:

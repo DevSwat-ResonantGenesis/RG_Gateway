@@ -234,37 +234,7 @@ async def chat_proxy(request: Request, path: str):
     except Exception as e:
         return {"error": f"Chat service unavailable: {str(e)}"}, 503
 
-# IDE agent streaming proxy → ide_agent_service (RG_Axtention_IDE)
-@app.api_route("/api/v1/ide/{path:path}", methods=["POST"])
-@edge_capture_decorator("gateway", "ide_proxy")
-async def ide_proxy(request: Request, path: str):
-    """Streaming proxy for IDE agent loop + completions → ide_agent_service"""
-    import asyncio
-
-    ide_agent_url = os.environ.get("GATEWAY_IDE_AGENT_URL", "http://ide_agent_service:8000")
-    url = f"{ide_agent_url}/api/v1/ide/{path}"
-
-    headers = dict(request.headers)
-    headers.pop("host", None)
-    body = await request.body()
-
-    async def stream_from_backend():
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST", url, headers=headers, content=body,
-            ) as resp:
-                async for chunk in resp.aiter_bytes():
-                    yield chunk
-
-    return StreamingResponse(
-        stream_from_backend(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+# IDE agent proxy REMOVED — ide_agent_service killed
 
 # Chat service health endpoint
 @app.get("/api/v1/chat/health")
@@ -362,7 +332,6 @@ from .rara_routes import router as rara_router
 from .node_routes import router as node_router
 from .routers import router as api_router
 from .usage_routes import router as usage_router
-from .predictions_routes import router as predictions_router
 from .git_routes import github_router, git_router
 
 # Include code routes FIRST (before catch-all router)
@@ -382,8 +351,7 @@ app.include_router(state_physics_api_v1_router)
 # AST Analysis UI + API (formerly Code Visualizer, now standalone rg_ast_analysis)
 app.include_router(code_visualizer_router)
 
-# Predictions routes (HashSphere → V8 Engine proxy, must be before catch-all)
-app.include_router(predictions_router, tags=["predictions"])
+# Predictions router REMOVED — v8_api_service killed
 
 # Include catch-all router LAST
 app.include_router(api_router, prefix="/api/v1", tags=["api"])
@@ -610,31 +578,9 @@ async def resonant_chat_proxy_legacy(path: str, request: Request):
     """Proxy resonant-chat requests without /api/v1 prefix for frontend compatibility."""
     return await proxy("chat", f"resonant-chat/{path}", request)
 
-# Skills API proxy - routes to chat_service skills router
-@app.api_route("/skills/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-@edge_capture_decorator("gateway", "skills_proxy")
-async def skills_proxy(path: str, request: Request):
-    """Proxy skills requests to chat service."""
-    return await proxy("chat", f"skills/{path}", request)
+# Skills proxy REMOVED — skills system deleted from chat
 
-@app.api_route("/api/skills/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-@edge_capture_decorator("gateway", "api_skills_proxy")
-async def api_skills_proxy(path: str, request: Request):
-    """Proxy /api/skills requests to chat service."""
-    return await proxy("chat", f"skills/{path}", request)
-
-# Build service proxy
-@app.api_route("/api/v1/project-builder/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
-@edge_capture_decorator("gateway", "project_builder_proxy")
-async def project_builder_proxy(path: str, request: Request):
-    """Proxy project-builder requests to build service."""
-    return await proxy("build", f"project-builder/{path}", request)
-
-@app.api_route("/api/v1/project-builder", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
-@edge_capture_decorator("gateway", "project_builder_base_proxy")
-async def project_builder_base_proxy(request: Request):
-    """Proxy base project-builder requests."""
-    return await proxy("build", "project-builder/", request)
+# Build/project-builder proxy REMOVED — build_service killed
 
 
 # API chat proxy - for Vite proxy compatibility (/api/chat/resonant-chat/...)
@@ -842,20 +788,8 @@ async def memory_proxy(request: Request, path: str):
     return await proxy("memory", f"memory/{path}", request)
 
 
-# ML endpoints - proxy to ml_service
-@app.api_route("/ml/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-@edge_capture_decorator("gateway", "ml_proxy")
-async def ml_proxy(request: Request, path: str):
-    """Proxy ML requests to ml_service."""
-    return await proxy("ml", path, request)
-
-
-# Marketplace endpoints - proxy to marketplace_service
-@app.api_route("/marketplace/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-@edge_capture_decorator("gateway", "marketplace_proxy")
-async def marketplace_proxy(request: Request, path: str):
-    """Proxy marketplace requests to marketplace_service."""
-    return await proxy("marketplace", f"marketplace/{path}", request)
+# ML proxy REMOVED — ml_service killed
+# Marketplace proxy REMOVED — marketplace_service killed
 
 
 # Execution endpoints - proxy to agent_engine_service
@@ -868,102 +802,8 @@ async def execution_proxy(request: Request, path: str = ""):
         return await proxy("agents", f"execution/{path}", request)
     return await proxy("agents", "execution", request)
 
-# Agentic Chat SSE streaming - proxy to standalone rg_agentic_chat service
-@app.api_route("/api/v1/agentic-chat/{path:path}", methods=["GET", "POST", "DELETE", "OPTIONS"])
-@app.api_route("/agentic-chat/{path:path}", methods=["GET", "POST", "DELETE", "OPTIONS"])
-@edge_capture_decorator("gateway", "agentic_chat_proxy")
-async def agentic_chat_proxy(request: Request, path: str):
-    """SSE streaming proxy for agentic chat to standalone RG_Registered_Users_Agentic_Chat service."""
-    from fastapi.responses import StreamingResponse
-    import httpx
-
-    agentic_chat_url = os.environ.get("AGENTIC_CHAT_SERVICE_URL", "http://rg_agentic_chat:8000")
-    target = f"{agentic_chat_url}/agentic-chat/{path}"
-
-    headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
-    if hasattr(request.state, "user_id") and request.state.user_id:
-        headers["x-user-id"] = str(request.state.user_id)
-    if hasattr(request.state, "org_id") and request.state.org_id:
-        headers["x-org-id"] = str(request.state.org_id)
-    if hasattr(request.state, "role") and request.state.role:
-        headers["x-user-role"] = str(request.state.role)
-    if hasattr(request.state, "is_superuser"):
-        headers["x-is-superuser"] = "true" if request.state.is_superuser else "false"
-    if hasattr(request.state, "unlimited_credits"):
-        headers["x-unlimited-credits"] = "true" if request.state.unlimited_credits else "false"
-    if hasattr(request.state, "plan") and request.state.plan:
-        headers["x-user-plan"] = str(request.state.plan)
-
-    body = await request.body()
-
-    async def _stream_sse():
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            async with client.stream(
-                method=request.method,
-                url=target,
-                content=body,
-                headers=headers,
-                params=request.query_params,
-            ) as resp:
-                async for chunk in resp.aiter_bytes():
-                    yield chunk
-
-    return StreamingResponse(
-        _stream_sse(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-# Public Guest Agentic Chat — proxy to standalone rg_public_guest_chat service
-@app.api_route("/api/v1/public/agentic-chat/{path:path}", methods=["GET", "POST", "OPTIONS"])
-@app.api_route("/public/agentic-chat/{path:path}", methods=["GET", "POST", "OPTIONS"])
-@edge_capture_decorator("gateway", "public_guest_chat_proxy")
-async def public_guest_chat_proxy(request: Request, path: str):
-    """SSE streaming proxy for public guest chat to standalone RG_Public-Guest-Agentic_Chat service."""
-    from fastapi.responses import StreamingResponse
-    import httpx
-
-    guest_chat_url = os.environ.get("GUEST_CHAT_SERVICE_URL", "http://rg_public_guest_chat:8010")
-    target = f"{guest_chat_url}/public/agentic-chat/{path}"
-
-    headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
-    body = await request.body()
-
-    if request.method == "GET":
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(target, headers=headers, params=request.query_params)
-            try:
-                return JSONResponse(content=resp.json(), status_code=resp.status_code)
-            except Exception:
-                from fastapi.responses import Response
-                return Response(content=resp.content, status_code=resp.status_code, media_type=resp.headers.get("content-type", "application/json"))
-
-    async def _stream_sse():
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            async with client.stream(
-                method=request.method,
-                url=target,
-                content=body,
-                headers=headers,
-                params=request.query_params,
-            ) as resp:
-                async for chunk in resp.aiter_bytes():
-                    yield chunk
-
-    return StreamingResponse(
-        _stream_sse(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+# Agentic chat proxy REMOVED — rg_agentic_chat killed
+# Public guest chat proxy REMOVED — rg_public_guest_chat killed
 
 
 # Workflow endpoints - proxy to workflow_service
@@ -998,13 +838,7 @@ async def audit_proxy(request: Request, path: str):
     return await proxy("blockchain", f"audit/{path}", request)
 
 
-# Policies endpoint - proxy to user_service or cognitive_service
-@app.api_route("/policies", methods=["GET", "OPTIONS"])
-@app.api_route("/policies/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-@edge_capture_decorator("gateway", "policies_proxy")
-async def policies_proxy(request: Request, path: str = ""):
-    """Proxy policies requests to cognitive_service."""
-    return await proxy("cognitive", f"policies/{path}" if path else "policies", request)
+# Cognitive/policies proxy REMOVED — cognitive_service killed
 
 
 # Organizations endpoints - proxy to user_service
@@ -1025,28 +859,7 @@ async def users_proxy(request: Request, path: str = ""):
     return await proxy("user", f"users/{path}" if path else "users", request)
 
 
-# Terminal endpoints - proxy to ide_platform_service
-@app.api_route("/terminal/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-@edge_capture_decorator("gateway", "terminal_proxy")
-async def terminal_proxy(request: Request, path: str):
-    """Proxy terminal requests to ide_platform_service."""
-    return await proxy("ide", f"terminal/{path}", request)
-
-
-# IDE LOC tracking - proxy to ide_platform_service
-@app.api_route("/api/v1/ide/loc/{path:path}", methods=["GET", "POST", "OPTIONS"])
-@edge_capture_decorator("gateway", "ide_loc_proxy")
-async def ide_loc_proxy(request: Request, path: str):
-    """Proxy IDE LOC tracking requests to ide_platform_service."""
-    return await proxy("ide", f"loc/{path}", request)
-
-
-# IDE updates - proxy to ide_platform_service
-@app.api_route("/api/v1/ide/updates/{path:path}", methods=["GET", "OPTIONS"])
-@edge_capture_decorator("gateway", "ide_updates_proxy")
-async def ide_updates_proxy(request: Request, path: str):
-    """Proxy IDE update check requests to ide_platform_service."""
-    return await proxy("ide", f"updates/{path}", request)
+# Terminal/IDE proxies REMOVED — ide_platform_service killed
 
 
 # AI endpoints - proxy to llm_service
@@ -1089,9 +902,7 @@ async def public_proxy(request: Request, path: str):
 from .code_routes import router as code_router
 app.include_router(code_router, prefix="/api/v1")
 
-# Local LLM endpoints - direct integration with Ollama
-from .api.v1.endpoints.local_llm import router as local_llm_router
-app.include_router(local_llm_router, prefix="/api/v1/local-llm", tags=["Local LLM"])
+# Local LLM router REMOVED — no Ollama in production
 
 # Agent Chat endpoints - Knowledge Daemon for admin agent communication
 from .api.v1.endpoints.agent_chat import router as agent_chat_router
