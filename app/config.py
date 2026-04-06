@@ -54,7 +54,6 @@ class Settings(BaseSettings):
     CODE_VISUALIZER_URL: str = _svc_url("code_visualizer", 8000)
     V8_API_URL: str = _svc_url("v8_api", 8080)
     RABBIT_URL: str = _svc_url("rabbit_api", 8000)
-    OPENCLAW_URL: str = _svc_url("openclaw", 8000)
 
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = 10000  # Very high for testing
@@ -107,6 +106,4 @@ SERVICE_MAP = {
     "rabbit": settings.RABBIT_URL,
     "rabbit-api": settings.RABBIT_URL,
     "rabbit_api": settings.RABBIT_URL,
-    # OpenClaw integration service (standalone, isolated)
-    "openclaw": settings.OPENCLAW_URL,
 }
