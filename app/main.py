@@ -855,7 +855,7 @@ async def ml_proxy(request: Request, path: str):
 @edge_capture_decorator("gateway", "marketplace_proxy")
 async def marketplace_proxy(request: Request, path: str):
     """Proxy marketplace requests to marketplace_service."""
-    return await proxy("marketplace", path, request)
+    return await proxy("marketplace", f"marketplace/{path}", request)
 
 
 # Execution endpoints - proxy to agent_engine_service
