@@ -1252,6 +1252,31 @@ async def webhook_user_list_route(request: Request):
 
 
 # ============================================
+# FEDERATION — External agents on user hardware
+# ============================================
+
+@router.api_route("/federation/register", methods=["POST", "OPTIONS"])
+async def federation_register_route(request: Request):
+    """Register an external agent running on user hardware."""
+    return await proxy("agents", "federation/register", request)
+
+@router.api_route("/federation/heartbeat", methods=["POST", "OPTIONS"])
+async def federation_heartbeat_route(request: Request):
+    """Heartbeat from a federated agent."""
+    return await proxy("agents", "federation/heartbeat", request)
+
+@router.api_route("/federation/agents", methods=["GET", "OPTIONS"])
+async def federation_list_agents_route(request: Request):
+    """List user's federated agents with connection status."""
+    return await proxy("agents", "federation/agents", request)
+
+@router.api_route("/federation/disconnect/{agent_id}", methods=["POST", "OPTIONS"])
+async def federation_disconnect_route(agent_id: str, request: Request):
+    """Disconnect a federated agent."""
+    return await proxy("agents", f"federation/disconnect/{agent_id}", request)
+
+
+# ============================================
 # LOCAL LLM TUNNEL ROUTES
 # ============================================
 
