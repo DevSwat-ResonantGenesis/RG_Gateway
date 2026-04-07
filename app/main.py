@@ -234,7 +234,116 @@ async def chat_proxy(request: Request, path: str):
     except Exception as e:
         return {"error": f"Chat service unavailable: {str(e)}"}, 503
 
-# IDE agent proxy REMOVED — ide_agent_service killed
+# ── IDE (RG_Axtention_IDE) proxy routes ──────────────────────────────────────
+
+IDE_SERVICE_URL = "http://ide_service:8000"
+
+
+@app.api_route("/api/v1/ide/agent-stream", methods=["POST", "OPTIONS"])
+@edge_capture_decorator("gateway", "ide_agent_stream")
+async def ide_agent_stream_proxy(request: Request):
+    """SSE streaming proxy for IDE agentic loop."""
+    url = f"{IDE_SERVICE_URL}/api/v1/ide/agent-stream"
+
+    headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+    if hasattr(request.state, "user_id") and request.state.user_id:
+        headers["x-user-id"] = request.state.user_id
+    if hasattr(request.state, "org_id") and request.state.org_id:
+        headers["x-org-id"] = request.state.org_id
+    if hasattr(request.state, "role") and request.state.role:
+        headers["x-user-role"] = request.state.role
+
+    body = await request.body()
+
+    async def stream_from_ide():
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            async with client.stream(
+                "POST", url, headers=headers, content=body,
+            ) as resp:
+                async for chunk in resp.aiter_bytes():
+                    yield chunk
+
+    return StreamingResponse(
+        stream_from_ide(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.api_route("/api/v1/ide/agent-stream/{session_id}/tool-results", methods=["POST"])
+@edge_capture_decorator("gateway", "ide_tool_results")
+async def ide_tool_results_proxy(request: Request, session_id: str):
+    """Proxy IDE tool results back to agent loop."""
+    url = f"{IDE_SERVICE_URL}/api/v1/ide/agent-stream/{session_id}/tool-results"
+    headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+    if hasattr(request.state, "user_id") and request.state.user_id:
+        headers["x-user-id"] = request.state.user_id
+    body = await request.body()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(url, headers=headers, content=body)
+    return Response(content=resp.content, status_code=resp.status_code, headers=dict(resp.headers))
+
+
+@app.api_route("/api/v1/ide/agent-stream/{session_id}/llm-result", methods=["POST"])
+@edge_capture_decorator("gateway", "ide_llm_result")
+async def ide_llm_result_proxy(request: Request, session_id: str):
+    """Proxy IDE local-LLM result back to agent loop."""
+    url = f"{IDE_SERVICE_URL}/api/v1/ide/agent-stream/{session_id}/llm-result"
+    headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+    if hasattr(request.state, "user_id") and request.state.user_id:
+        headers["x-user-id"] = request.state.user_id
+    body = await request.body()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(url, headers=headers, content=body)
+    return Response(content=resp.content, status_code=resp.status_code, headers=dict(resp.headers))
+
+
+@app.api_route("/api/v1/ide/completions", methods=["POST", "OPTIONS"])
+@edge_capture_decorator("gateway", "ide_completions")
+async def ide_completions_proxy(request: Request):
+    """SSE streaming proxy for IDE inline completions."""
+    url = f"{IDE_SERVICE_URL}/api/v1/ide/completions"
+
+    headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+    if hasattr(request.state, "user_id") and request.state.user_id:
+        headers["x-user-id"] = request.state.user_id
+    if hasattr(request.state, "org_id") and request.state.org_id:
+        headers["x-org-id"] = request.state.org_id
+
+    body = await request.body()
+
+    async def stream_completions():
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            async with client.stream(
+                "POST", url, headers=headers, content=body,
+            ) as resp:
+                async for chunk in resp.aiter_bytes():
+                    yield chunk
+
+    return StreamingResponse(
+        stream_completions(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/api/v1/ide/health")
+async def ide_health():
+    """IDE service health through gateway."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{IDE_SERVICE_URL}/health")
+            return resp.json()
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 
 # Chat service health endpoint
 @app.get("/api/v1/chat/health")
@@ -859,7 +968,7 @@ async def users_proxy(request: Request, path: str = ""):
     return await proxy("user", f"users/{path}" if path else "users", request)
 
 
-# Terminal/IDE proxies REMOVED — ide_platform_service killed
+# Terminal proxies — not currently needed (IDE tools execute locally)
 
 
 # AI endpoints - proxy to llm_service
