@@ -147,6 +147,24 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/openclaw/manifest",
             "/openclaw/setup-guide",
             "/openclaw/relay/",
+            # Crypto public endpoints (Etherscan-like: token stats, address lookup, recent txs)
+            "/crypto/token/stats",
+            "/crypto/address/",
+            "/crypto/transactions/recent",
+            "/api/crypto/token/stats",
+            "/api/crypto/address/",
+            "/api/crypto/transactions/recent",
+            "/api/v1/crypto/token/stats",
+            "/api/v1/crypto/address/",
+            "/api/v1/crypto/transactions/recent",
+            "/api/v1/api/crypto/token/stats",
+            "/api/v1/api/crypto/address/",
+            "/api/v1/api/crypto/transactions/recent",
+            # Mining dashboard (public network stats)
+            "/mining/dashboard/",
+            "/api/mining/dashboard/",
+            "/api/v1/mining/dashboard/",
+            "/api/v1/api/mining/dashboard/",
         )
 
         import os

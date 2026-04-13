@@ -61,7 +61,7 @@ class KnowledgeDaemon:
     """
     
     # Default system prompt for the knowledge daemon
-    DEFAULT_SYSTEM_PROMPT = """You are a helpful AI assistant integrated into the Resonant Genesis platform.
+    DEFAULT_SYSTEM_PROMPT = """You are a helpful AI assistant integrated into the DevSwat platform.
 You assist platform administrators and developers with:
 - Understanding platform architecture and services
 - Debugging issues and analyzing logs
