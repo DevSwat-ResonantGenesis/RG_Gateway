@@ -138,6 +138,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/storage/download",
             # Rabbit post OG pages (social media sharing)
             "/api/v1/rabbit/posts/",
+            # OpenClaw public endpoints (health, manifest, relay — HMAC-verified)
+            "/api/v1/openclaw/health",
+            "/api/v1/openclaw/manifest",
+            "/api/v1/openclaw/setup-guide",
+            "/api/v1/openclaw/relay/",
+            "/openclaw/health",
+            "/openclaw/manifest",
+            "/openclaw/setup-guide",
+            "/openclaw/relay/",
         )
 
         import os

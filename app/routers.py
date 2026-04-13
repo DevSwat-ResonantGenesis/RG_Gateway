@@ -1036,6 +1036,134 @@ async def federation_disconnect_route(agent_id: str, request: Request):
 
 
 # ============================================
+# OPENCLAW FEDERATION SERVICE ROUTES
+# ============================================
+# All OpenClaw traffic routes through the gateway's existing HTTPS endpoint.
+# openclaw_service is internal-only (zero ports exposed to the internet).
+# Auth: Gateway JWT middleware handles authentication for all non-public routes.
+# Public: relay (HMAC-verified by openclaw_service) and health only.
+
+# --- Public (no auth) ---
+
+@router.api_route("/openclaw/health", methods=["GET", "OPTIONS"])
+async def openclaw_health_route(request: Request):
+    """OpenClaw service health — public, no auth."""
+    return await proxy_public("openclaw", "health", request)
+
+@router.api_route("/openclaw/manifest", methods=["GET", "OPTIONS"])
+async def openclaw_manifest_route(request: Request):
+    """ClawHub skill manifest — public discovery."""
+    return await proxy_public("openclaw", "manifest", request)
+
+@router.api_route("/openclaw/setup-guide", methods=["GET", "OPTIONS"])
+async def openclaw_setup_guide_route(request: Request):
+    """Setup instructions — public."""
+    return await proxy_public("openclaw", "setup-guide", request)
+
+@router.api_route("/openclaw/relay/{agent_id}", methods=["POST", "OPTIONS"])
+async def openclaw_relay_route(agent_id: str, request: Request):
+    """Public webhook relay — HMAC signature verified by openclaw_service."""
+    return await proxy_public("openclaw", f"relay/{agent_id}", request)
+
+# --- Authenticated (JWT required via gateway middleware) ---
+
+@router.api_route("/openclaw/status", methods=["GET", "OPTIONS"])
+async def openclaw_status_route(request: Request):
+    """Connection status for authenticated user."""
+    return await proxy("openclaw", "status", request)
+
+@router.api_route("/openclaw/connections", methods=["GET", "POST", "OPTIONS"])
+async def openclaw_connections_route(request: Request):
+    """List or create OpenClaw connections (authenticated)."""
+    return await proxy("openclaw", "connections", request)
+
+@router.api_route("/openclaw/connections/{trigger_id}/pause", methods=["POST", "OPTIONS"])
+async def openclaw_connection_pause_route(trigger_id: str, request: Request):
+    """Pause an OpenClaw connection."""
+    return await proxy("openclaw", f"connections/{trigger_id}/pause", request)
+
+@router.api_route("/openclaw/connections/{trigger_id}/resume", methods=["POST", "OPTIONS"])
+async def openclaw_connection_resume_route(trigger_id: str, request: Request):
+    """Resume an OpenClaw connection."""
+    return await proxy("openclaw", f"connections/{trigger_id}/resume", request)
+
+@router.api_route("/openclaw/connections/{trigger_id}", methods=["DELETE", "OPTIONS"])
+async def openclaw_connection_delete_route(trigger_id: str, request: Request):
+    """Delete an OpenClaw connection."""
+    return await proxy("openclaw", f"connections/{trigger_id}", request)
+
+# --- Agent Registration & Lifecycle ---
+
+@router.api_route("/openclaw/agents/register", methods=["POST", "OPTIONS"])
+async def openclaw_agent_register_route(request: Request):
+    """Register an OpenClaw agent on the platform (authenticated)."""
+    return await proxy("openclaw", "agents/register", request)
+
+@router.api_route("/openclaw/agents/openclaw", methods=["GET", "OPTIONS"])
+async def openclaw_agents_list_route(request: Request):
+    """List user's OpenClaw agents."""
+    return await proxy("openclaw", "agents/openclaw", request)
+
+@router.api_route("/openclaw/agents/heartbeat", methods=["POST", "OPTIONS"])
+async def openclaw_agent_heartbeat_route(request: Request):
+    """Heartbeat from OpenClaw agent on user hardware."""
+    return await proxy("openclaw", "agents/heartbeat", request)
+
+# --- Skills Federation ---
+
+@router.api_route("/openclaw/skills/available", methods=["GET", "OPTIONS"])
+async def openclaw_skills_available_route(request: Request):
+    """List all platform tools available to OpenClaw agents."""
+    return await proxy("openclaw", "skills/available", request)
+
+@router.api_route("/openclaw/skills/execute", methods=["POST", "OPTIONS"])
+async def openclaw_skills_execute_route(request: Request):
+    """Execute a platform skill on behalf of an OpenClaw agent."""
+    return await proxy("openclaw", "skills/execute", request)
+
+@router.api_route("/openclaw/skills/import", methods=["POST", "OPTIONS"])
+async def openclaw_skills_import_route(request: Request):
+    """Import a custom skill from an OpenClaw agent."""
+    return await proxy("openclaw", "skills/import", request)
+
+# --- Memory Bridge ---
+
+@router.api_route("/openclaw/memory/ingest", methods=["POST", "OPTIONS"])
+async def openclaw_memory_ingest_route(request: Request):
+    """Ingest memory from OpenClaw agent into Hash Sphere."""
+    return await proxy("openclaw", "memory/ingest", request)
+
+@router.api_route("/openclaw/memory/query", methods=["POST", "OPTIONS"])
+async def openclaw_memory_query_route(request: Request):
+    """Query Hash Sphere memories for an OpenClaw agent."""
+    return await proxy("openclaw", "memory/query", request)
+
+# --- Governance & Marketplace ---
+
+@router.api_route("/openclaw/governance/enroll", methods=["POST", "OPTIONS"])
+async def openclaw_governance_enroll_route(request: Request):
+    """Enroll OpenClaw agent in RARA governance."""
+    return await proxy("openclaw", "governance/enroll", request)
+
+@router.api_route("/openclaw/governance/{agent_id}", methods=["GET", "OPTIONS"])
+async def openclaw_governance_status_route(agent_id: str, request: Request):
+    """Governance status for an OpenClaw agent."""
+    return await proxy("openclaw", f"governance/{agent_id}", request)
+
+@router.api_route("/openclaw/marketplace/list", methods=["POST", "OPTIONS"])
+async def openclaw_marketplace_list_route(request: Request):
+    """List an OpenClaw agent on the marketplace."""
+    return await proxy("openclaw", "marketplace/list", request)
+
+# --- LLM Proxy (OpenAI-compatible) ---
+
+@router.api_route("/openclaw/v1/chat/completions", methods=["POST", "OPTIONS"])
+async def openclaw_llm_proxy_route(request: Request):
+    """OpenAI-compatible LLM proxy — routes through platform Unified LLM Service."""
+    return await proxy("openclaw", "v1/chat/completions", request)
+
+
+# ============================================
 # LOCAL LLM TUNNEL ROUTES
 # ============================================
 

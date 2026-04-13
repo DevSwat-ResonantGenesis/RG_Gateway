@@ -864,6 +864,48 @@ async def hash_sphere_anchors(request: Request):
     return await proxy("memory", "memory/hash-sphere/anchors", request)
 
 
+# ============================================
+# OPENCLAW FEDERATION ROUTES (no /api/v1 prefix — for local connector)
+# ============================================
+# The OpenClaw connector running on user hardware calls these directly.
+# openclaw_service is internal-only — zero ports exposed to the internet.
+
+@app.api_route("/openclaw/health", methods=["GET", "OPTIONS"])
+async def openclaw_health_legacy(request: Request):
+    """OpenClaw health — public."""
+    from .reverse_proxy import proxy_public
+    return await proxy_public("openclaw", "health", request)
+
+@app.api_route("/openclaw/manifest", methods=["GET", "OPTIONS"])
+async def openclaw_manifest_legacy(request: Request):
+    """ClawHub manifest — public."""
+    from .reverse_proxy import proxy_public
+    return await proxy_public("openclaw", "manifest", request)
+
+@app.api_route("/openclaw/setup-guide", methods=["GET", "OPTIONS"])
+async def openclaw_setup_guide_legacy(request: Request):
+    """Setup guide — public."""
+    from .reverse_proxy import proxy_public
+    return await proxy_public("openclaw", "setup-guide", request)
+
+@app.api_route("/openclaw/relay/{agent_id}", methods=["POST", "OPTIONS"])
+async def openclaw_relay_legacy(agent_id: str, request: Request):
+    """Webhook relay — public, HMAC-verified by openclaw_service."""
+    from .reverse_proxy import proxy_public
+    return await proxy_public("openclaw", f"relay/{agent_id}", request)
+
+@app.api_route("/openclaw/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+@edge_capture_decorator("gateway", "openclaw_proxy_legacy")
+async def openclaw_proxy_legacy(path: str, request: Request):
+    """Proxy all authenticated OpenClaw requests to openclaw_service."""
+    return await proxy("openclaw", path, request)
+
+@app.api_route("/openclaw", methods=["GET", "OPTIONS"])
+@edge_capture_decorator("gateway", "openclaw_base_proxy_legacy")
+async def openclaw_base_proxy_legacy(request: Request):
+    """Proxy base /openclaw to openclaw_service."""
+    return await proxy("openclaw", "", request)
+
 # Legacy agents endpoints - REMOVED: agent_engine_service is now running
 # Routes are handled by routers.py which proxies to agent_engine_service
 
