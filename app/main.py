@@ -810,10 +810,17 @@ async def user_api_keys_delete_by_provider_proxy(request: Request, provider: str
     return await proxy("auth", f"auth/user/api-keys/by-provider/{provider}", request)
 
 
-@app.api_route("/user/api-keys/{key_id}", methods=["DELETE", "OPTIONS"])
+@app.api_route("/user/api-keys/{key_id}/set-primary", methods=["PUT", "OPTIONS"])
+@edge_capture_decorator("gateway", "user_api_keys_set_primary_proxy")
+async def user_api_keys_set_primary_proxy(request: Request, key_id: str):
+    """Proxy set-primary API key to auth_service."""
+    return await proxy("auth", f"auth/user/api-keys/{key_id}/set-primary", request)
+
+
+@app.api_route("/user/api-keys/{key_id}", methods=["DELETE", "PUT", "OPTIONS"])
 @edge_capture_decorator("gateway", "user_api_keys_delete_proxy")
 async def user_api_keys_delete_proxy(request: Request, key_id: str):
-    """Proxy user API key deletion to auth_service."""
+    """Proxy user API key operations to auth_service."""
     return await proxy("auth", f"auth/user/api-keys/{key_id}", request)
 
 
