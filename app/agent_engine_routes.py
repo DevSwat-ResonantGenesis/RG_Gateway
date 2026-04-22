@@ -16,15 +16,19 @@ async def proxy_to_agent_engine(path: str, request: Request) -> Response:
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Forward request with user context
+            # Forward all x-* identity headers so agent engine sees roles & privileges
+            forwarded = {
+                "x-user-id": user_id,
+                "x-org-id": org_id,
+                "x-user-role": request.headers.get("x-user-role", "user"),
+                "x-is-superuser": request.headers.get("x-is-superuser", ""),
+                "x-unlimited-credits": request.headers.get("x-unlimited-credits", ""),
+                "content-type": request.headers.get("content-type", "application/json"),
+            }
             resp = await client.request(
                 method=request.method,
                 url=f"{AGENT_ENGINE_URL}/{path}",
-                headers={
-                    "x-user-id": user_id,
-                    "x-org-id": org_id,
-                    "content-type": request.headers.get("content-type", "application/json"),
-                },
+                headers=forwarded,
                 content=await request.body() if request.method in ["POST", "PUT", "PATCH"] else None,
                 params=request.query_params,
             )
