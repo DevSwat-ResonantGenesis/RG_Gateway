@@ -1471,7 +1471,39 @@ async def workflow_route(path: str, request: Request):
     return await proxy("workflow", f"workflow/{path}", request)
 
 
-# Marketplace routes REMOVED — marketplace_service killed
+# ============================================
+# MARKETPLACE ROUTES
+# ============================================
+
+@router.api_route("/marketplace/health", methods=["GET", "OPTIONS"])
+async def marketplace_health(request: Request):
+    """Marketplace Service health check."""
+    return await proxy("marketplace", "health", request)
+
+@router.api_route("/marketplace/marketplace/listings", methods=["GET", "OPTIONS"])
+async def marketplace_listings_public(request: Request):
+    """Public marketplace listings (no auth required)."""
+    return await proxy_public("marketplace", "marketplace/listings", request)
+
+@router.api_route("/marketplace/marketplace/categories", methods=["GET", "OPTIONS"])
+async def marketplace_categories_public(request: Request):
+    """Public marketplace categories."""
+    return await proxy_public("marketplace", "marketplace/categories", request)
+
+@router.api_route("/marketplace/marketplace/stats", methods=["GET", "OPTIONS"])
+async def marketplace_stats_public(request: Request):
+    """Public marketplace stats."""
+    return await proxy_public("marketplace", "marketplace/stats", request)
+
+@router.api_route("/marketplace/marketplace/featured", methods=["GET", "OPTIONS"])
+async def marketplace_featured_public(request: Request):
+    """Public featured agents."""
+    return await proxy_public("marketplace", "marketplace/featured", request)
+
+@router.api_route("/marketplace/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+async def marketplace_route(path: str, request: Request):
+    """Marketplace Service API routes."""
+    return await proxy("marketplace", f"marketplace/{path}", request)
 
 
 # ============================================

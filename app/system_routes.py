@@ -234,9 +234,9 @@ async def get_platform_users(request: Request):
             LEFT JOIN LATERAL (
                 SELECT COUNT(DISTINCT rc.id) AS chat_count,
                        (SELECT COUNT(*) FROM resonant_chat_messages rcm
-                        WHERE rcm.chat_id IN (SELECT rc2.id FROM resonant_chats rc2 WHERE rc2.user_id = u.id::text)
+                        WHERE rcm.chat_id IN (SELECT rc2.id FROM resonant_chats rc2 WHERE rc2.user_id = u.id)
                        ) AS message_count
-                FROM resonant_chats rc WHERE rc.user_id = u.id::text
+                FROM resonant_chats rc WHERE rc.user_id = u.id
             ) chat_counts ON true
             ORDER BY u.created_at DESC LIMIT 500
         """)
@@ -423,6 +423,115 @@ async def get_platform_analytics(request: Request):
 
     analytics["timestamp"] = datetime.utcnow().isoformat()
     return analytics
+
+
+@router.get("/analytics/usage")
+async def get_usage_analytics(request: Request):
+    """Comprehensive usage analytics for the Usage Analytics tab."""
+    result = {
+        "platform_totals": {
+            "total_messages": 0, "total_chats": 0, "total_credits_used": 0,
+            "total_logins": 0, "active_users_7d": 0,
+        },
+        "ai_provider_usage": [],
+        "service_usage": [],
+        "top_users_by_chat": [],
+        "top_users_by_credits": [],
+        "per_user_stats": [],
+        "login_trends": [],
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    conn = None
+    try:
+        pool = await _get_db_pool()
+        conn = await pool.acquire()
+
+        # Platform totals
+        result["platform_totals"]["total_messages"] = await conn.fetchval(
+            "SELECT COUNT(*) FROM resonant_chat_messages") or 0
+        result["platform_totals"]["total_chats"] = await conn.fetchval(
+            "SELECT COUNT(*) FROM resonant_chats") or 0
+        result["platform_totals"]["total_logins"] = await conn.fetchval(
+            "SELECT COUNT(*) FROM audit_logs WHERE event_type IN ('login','sso_login')") or 0
+        result["platform_totals"]["active_users_7d"] = await conn.fetchval(
+            "SELECT COUNT(*) FROM users WHERE last_login_at > NOW() - INTERVAL '7 days'") or 0
+
+        # Credits
+        try:
+            result["platform_totals"]["total_credits_used"] = await conn.fetchval(
+                "SELECT COALESCE(SUM(ABS(amount)),0) FROM credit_transactions WHERE amount < 0") or 0
+        except Exception:
+            pass
+
+        # Top users by chat
+        rows = await conn.fetch("""
+            SELECT u.email, u.full_name,
+                   COUNT(DISTINCT rc.id) as chats,
+                   (SELECT COUNT(*) FROM resonant_chat_messages m
+                    WHERE m.chat_id IN (SELECT c2.id FROM resonant_chats c2 WHERE c2.user_id = u.id)
+                   ) as messages
+            FROM users u
+            JOIN resonant_chats rc ON rc.user_id = u.id
+            GROUP BY u.id, u.email, u.full_name
+            ORDER BY messages DESC LIMIT 20
+        """)
+        result["top_users_by_chat"] = [
+            {"email": r["email"], "name": r["full_name"] or "", "messages": r["messages"], "chats": r["chats"]}
+            for r in rows
+        ]
+
+        # Per-user stats
+        rows = await conn.fetch("""
+            SELECT u.id, u.email, u.full_name, u.is_superuser, u.unlimited_credits,
+                   u.last_login_at, u.created_at,
+                   COALESCE(cc.chat_count, 0) as chat_count,
+                   COALESCE(cc.message_count, 0) as message_count
+            FROM users u
+            LEFT JOIN LATERAL (
+                SELECT COUNT(DISTINCT rc.id) as chat_count,
+                       (SELECT COUNT(*) FROM resonant_chat_messages m
+                        WHERE m.chat_id IN (SELECT c2.id FROM resonant_chats c2 WHERE c2.user_id = u.id)
+                       ) as message_count
+                FROM resonant_chats rc WHERE rc.user_id = u.id
+            ) cc ON true
+            ORDER BY cc.message_count DESC NULLS LAST
+        """)
+        result["per_user_stats"] = [
+            {
+                "id": str(r["id"]), "email": r["email"], "name": r["full_name"] or "",
+                "role": "admin" if r["is_superuser"] else "user", "plan": "free",
+                "last_login": r["last_login_at"].isoformat() if r["last_login_at"] else None,
+                "signup_date": r["created_at"].isoformat() if r["created_at"] else None,
+                "chat_count": r["chat_count"], "message_count": r["message_count"],
+                "credits_spent": 0, "credits_received": 0, "txn_count": 0,
+                "unlimited_credits": r["unlimited_credits"] or False,
+                "is_superuser": r["is_superuser"] or False,
+            }
+            for r in rows
+        ]
+
+        # Login trends (last 14 days)
+        trend_rows = await conn.fetch("""
+            SELECT event_type as event, created_at::date as date, COUNT(*) as count
+            FROM audit_logs
+            WHERE event_type IN ('login','sso_login','registration')
+              AND created_at > NOW() - INTERVAL '14 days'
+            GROUP BY event_type, created_at::date
+            ORDER BY date
+        """)
+        result["login_trends"] = [
+            {"event": r["event"], "date": r["date"].isoformat(), "count": r["count"]}
+            for r in trend_rows
+        ]
+
+    except Exception as e:
+        logger.error(f"Usage analytics error: {e}")
+        result["error"] = str(e)
+    finally:
+        if conn:
+            await pool.release(conn)
+
+    return result
 
 
 # ============================================

@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     CRYPTO_URL: str = _svc_url("crypto", 8000)
     NOTIFICATION_URL: str = _svc_url("notification", 8000)
     CODE_EXECUTION_URL: str = _svc_url("code_execution", 8000)
+    MARKETPLACE_URL: str = _svc_url("marketplace", 8000)
     OPENCLAW_URL: str = _svc_url("openclaw", 8000)
 
     # Rate limiting
@@ -85,6 +86,8 @@ SERVICE_MAP = {
     "hash-sphere": settings.MEMORY_URL,
     # Code execution microservice
     "code-execution": settings.CODE_EXECUTION_URL,
+    # Marketplace service
+    "marketplace": settings.MARKETPLACE_URL,
     # OpenClaw federation service (internal only — zero ports exposed)
     "openclaw": settings.OPENCLAW_URL,
 }
