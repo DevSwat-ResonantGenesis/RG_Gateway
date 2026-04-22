@@ -121,9 +121,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # API key validation (needed during signup before auth)
             "/user/api-keys/validate",
             # Marketplace service (public read-only catalogs)
-            "/api/marketplace/marketplace/categories",
-            "/api/marketplace/marketplace/stats",
-            "/api/marketplace/marketplace/featured",
+            "/api/v1/marketplace/marketplace/categories",
+            "/api/v1/marketplace/marketplace/stats",
+            "/api/v1/marketplace/marketplace/featured",
             # Node/decentralized network
             "/api/v1/node/",
             # Resonant Chat public endpoints (agent/team lists only)
@@ -172,7 +172,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             public_prefixes = public_prefixes + ("/state-physics", "/api/v1/state-physics")
         
         # Allow GET on marketplace listings without auth
-        if path.startswith("/api/marketplace/marketplace/listings") and method == "GET":
+        if path.startswith("/api/v1/marketplace/marketplace/listings") and method == "GET":
             return await call_next(request)
 
         if (
