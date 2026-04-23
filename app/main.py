@@ -700,6 +700,46 @@ async def api_chat_resonant_proxy(path: str, request: Request):
     return await proxy("chat", f"resonant-chat/{path}", request)
 
 
+# SSE streaming proxy for /api/resonant-chat/message/stream
+@app.api_route("/api/resonant-chat/message/stream", methods=["POST", "OPTIONS"])
+@edge_capture_decorator("gateway", "api_resonant_chat_stream_proxy")
+async def api_resonant_chat_stream_proxy(request: Request):
+    """SSE streaming proxy for /api/resonant-chat/message/stream calls."""
+    chat_service_url = "http://chat_service:8000"
+    url = f"{chat_service_url}/resonant-chat/message/stream"
+
+    headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+    if hasattr(request.state, "user_id") and request.state.user_id:
+        headers["x-user-id"] = request.state.user_id
+    if hasattr(request.state, "org_id") and request.state.org_id:
+        headers["x-org-id"] = request.state.org_id
+    if hasattr(request.state, "role") and request.state.role:
+        headers["x-user-role"] = request.state.role
+    if hasattr(request.state, "is_superuser"):
+        headers["x-is-superuser"] = str(getattr(request.state, "is_superuser", False)).lower()
+    if hasattr(request.state, "unlimited_credits"):
+        headers["x-unlimited-credits"] = str(getattr(request.state, "unlimited_credits", False)).lower()
+
+    body = await request.body()
+
+    async def stream_from_chat():
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream(
+                "POST", url, headers=headers, content=body,
+            ) as resp:
+                async for chunk in resp.aiter_bytes():
+                    yield chunk
+
+    return StreamingResponse(
+        stream_from_chat(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 # API resonant-chat proxy - for frontend /api/resonant-chat/... calls
 @app.api_route("/api/resonant-chat/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 @edge_capture_decorator("gateway", "api_resonant_chat_proxy")
