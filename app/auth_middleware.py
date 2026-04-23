@@ -442,7 +442,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Also set on request.state for proxy function
         request.state.user_id = user_id
         request.state.role = user_role
+        request.state.plan = user_plan
         request.state.org_id = org_id
+        request.state.is_superuser = is_superuser
         request.state.unlimited_credits = unlimited_credits
         request.state.crypto_hash = data.get("crypto_hash")
         request.state.user_hash = data.get("user_hash")

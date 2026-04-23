@@ -78,6 +78,12 @@ async def proxy(service: str, path: str, request: Request) -> Response:
         headers["x-org-id"] = request.state.org_id
     if hasattr(request.state, "role") and request.state.role:
         headers["x-user-role"] = request.state.role
+    if getattr(request.state, "plan", None):
+        headers["x-user-plan"] = str(request.state.plan)
+    if getattr(request.state, "is_superuser", False):
+        headers["x-is-superuser"] = "true"
+    if getattr(request.state, "unlimited_credits", False):
+        headers["x-unlimited-credits"] = "true"
 
     try:
         async with httpx.AsyncClient(timeout=60.0, follow_redirects=False) as client:
