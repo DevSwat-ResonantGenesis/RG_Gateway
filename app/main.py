@@ -335,6 +335,24 @@ async def ide_completions_proxy(request: Request):
     )
 
 
+@app.get("/api/v1/ide/providers")
+@edge_capture_decorator("gateway", "ide_providers")
+async def ide_providers_proxy(request: Request):
+    """Proxy IDE provider status from IDE backend."""
+    url = f"{IDE_SERVICE_URL}/api/v1/ide/providers"
+    headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+    if hasattr(request.state, "user_id") and request.state.user_id:
+        headers["x-user-id"] = request.state.user_id
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers)
+            return Response(content=resp.content, status_code=resp.status_code,
+                            headers={"content-type": "application/json"})
+    except Exception as e:
+        return Response(content=json.dumps({"providers": [], "error": str(e)}),
+                        status_code=502, headers={"content-type": "application/json"})
+
+
 @app.get("/api/v1/ide/health")
 async def ide_health():
     """IDE service health through gateway."""
