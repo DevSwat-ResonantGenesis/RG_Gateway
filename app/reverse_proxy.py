@@ -127,11 +127,23 @@ async def proxy_public(service: str, path: str, request: Request) -> Response:
 
     target = f"{SERVICE_MAP[service]}/{path}" if path else SERVICE_MAP[service]
 
-    # For public endpoints, only pass safe headers
+    # For public endpoints, pass safe headers + webhook-specific ones
     safe_headers = {
         "content-type": request.headers.get("content-type", "application/json"),
         "accept": request.headers.get("accept", "*/*"),
     }
+    # Pass through webhook signature/event headers for provider verification
+    _webhook_headers = (
+        "x-hub-signature-256", "x-github-event", "x-github-delivery",
+        "stripe-signature",
+        "x-slack-signature", "x-slack-request-timestamp",
+        "x-webhook-signature", "x-webhook-secret",
+        "x-internal-service-key",
+    )
+    for h in _webhook_headers:
+        val = request.headers.get(h)
+        if val:
+            safe_headers[h] = val
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
