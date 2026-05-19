@@ -1009,6 +1009,11 @@ async def webhook_user_list_route(request: Request):
     """List all webhook triggers for the authenticated user."""
     return await proxy("agents", "webhooks/user/list", request)
 
+@router.api_route("/webhooks/agent/{agent_id}/events", methods=["GET", "OPTIONS"])
+async def webhook_events_route(agent_id: str, request: Request):
+    """List webhook event audit log for an agent."""
+    return await proxy("agents", f"webhooks/agent/{agent_id}/events", request)
+
 
 # ============================================
 # FEDERATION — External agents on user hardware

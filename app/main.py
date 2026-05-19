@@ -68,6 +68,8 @@ app.add_middleware(
         "https://resonantgenesis.xyz",
         "https://www.resonantgenesis.xyz",
         "https://api.resonantgenesis.xyz",
+        "http://157.230.12.225",
+        "https://157.230.12.225",
         # Development domains (for local testing)
         "http://localhost:5173",
         "http://localhost:5174",
