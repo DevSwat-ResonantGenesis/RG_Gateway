@@ -214,7 +214,7 @@ async def _get_github_token_for_user(user_id: str) -> Optional[Dict[str, Any]]:
     import os, httpx
 
     # Auth service DB (PATs stored via /user/api-keys)
-    auth_url = os.getenv("AUTH_SERVICE_URL", "http://green_auth_service:8000")
+    auth_url = os.getenv("AUTH_SERVICE_URL", "http://auth_service:8000")
     internal_key = os.getenv("INTERNAL_SERVICE_KEY", "")
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
