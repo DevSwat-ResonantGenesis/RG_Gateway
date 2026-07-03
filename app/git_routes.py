@@ -3,15 +3,135 @@
 These endpoints provide Git operations and GitHub integration functionality.
 """
 
+import os
+import re
+import shutil
+import subprocess
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 
 router = APIRouter(tags=["git"])
+
+# ============================================
+# Local Git Workspace Helpers
+#
+# The IDE's project files live in memory_service (Hash Sphere), not on disk.
+# To run real `git` commands we materialize a project's current files into a
+# scratch working directory on demand, then operate on it with subprocess.
+# The workspace is ephemeral (wiped on gateway container restart/redeploy) —
+# that's an accepted tradeoff for now: it's rebuilt transparently on next use,
+# it just means git history older than the last container restart is lost.
+# ============================================
+
+GIT_WORKSPACE_ROOT = os.getenv("GIT_WORKSPACE_ROOT", "/tmp/rg_git_workspaces")
+MEMORY_SERVICE_URL = os.getenv("MEMORY_SERVICE_URL", "http://memory_service:8000")
+
+
+def _safe_project_dirname(project_id: str) -> str:
+    """Collapse project_id to a filesystem-safe token (defends against path traversal)."""
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", project_id or "")[:128]
+    if not safe:
+        raise HTTPException(status_code=400, detail="Invalid project_id")
+    return safe
+
+
+def _workspace_dir(project_id: str) -> str:
+    return os.path.join(GIT_WORKSPACE_ROOT, _safe_project_dirname(project_id))
+
+
+def _safe_join(base: str, rel_path: str) -> Optional[str]:
+    """Join rel_path onto base, rejecting anything that escapes base."""
+    rel_path = (rel_path or "").lstrip("/")
+    full = os.path.normpath(os.path.join(base, rel_path))
+    base_real = os.path.normpath(base)
+    if full != base_real and not full.startswith(base_real + os.sep):
+        return None
+    return full
+
+
+def _user_id_from_request(request: Request) -> Optional[str]:
+    return request.headers.get("x-user-id") or request.headers.get("X-User-ID")
+
+
+def _effective_files(payload: BaseModel) -> Optional[List[str]]:
+    """Reconcile the several field-name conventions callers use for a file list
+    (files / paths / file_path) into a single list, or None to mean 'all files'."""
+    files = getattr(payload, "files", None)
+    if files:
+        return files
+    paths = getattr(payload, "paths", None)
+    if paths:
+        return paths
+    file_path = getattr(payload, "file_path", None)
+    if file_path:
+        return [file_path]
+    return None
+
+
+def _run_git(workspace: str, *args: str) -> "subprocess.CompletedProcess[str]":
+    return subprocess.run(
+        ["git", *args], cwd=workspace, capture_output=True, text=True, timeout=30,
+    )
+
+
+def _current_branch(workspace: str) -> str:
+    result = _run_git(workspace, "branch", "--show-current")
+    return (result.stdout or "").strip() or "main"
+
+
+def _clear_workspace_files(workspace: str) -> None:
+    """Remove all tracked working files (keep .git) so deletions in Hash Sphere show up."""
+    for entry in os.listdir(workspace):
+        if entry == ".git":
+            continue
+        full = os.path.join(workspace, entry)
+        if os.path.isdir(full):
+            shutil.rmtree(full, ignore_errors=True)
+        else:
+            os.remove(full)
+
+
+async def _sync_workspace(project_id: str, user_id: Optional[str]) -> str:
+    """Materialize the project's current Hash Sphere files into a local git working dir."""
+    workspace = _workspace_dir(project_id)
+    os.makedirs(workspace, exist_ok=True)
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{MEMORY_SERVICE_URL}/memory/project/files",
+                params={"project_id": project_id},
+                headers={"x-user-id": user_id} if user_id else {},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch project files: {e}")
+
+    _clear_workspace_files(workspace)
+    for f in data.get("files", []):
+        if f.get("type") != "file":
+            continue
+        full_path = _safe_join(workspace, f.get("path", ""))
+        if not full_path:
+            continue
+        os.makedirs(os.path.dirname(full_path) or workspace, exist_ok=True)
+        with open(full_path, "w", encoding="utf-8") as fh:
+            fh.write(f.get("content") or "")
+
+    if not os.path.isdir(os.path.join(workspace, ".git")):
+        _run_git(workspace, "init", "-q")
+        _run_git(workspace, "config", "user.email", "ide@resonantgenesis.local")
+        _run_git(workspace, "config", "user.name", "Resonant IDE")
+        _run_git(workspace, "checkout", "-q", "-b", "main")
+
+    return workspace
 
 
 # ============================================
@@ -26,17 +146,20 @@ class GitCommitRequest(BaseModel):
     project_id: str
     message: str
     files: Optional[List[str]] = None
+    paths: Optional[List[str]] = None  # alias used by src/api/git.ts
 
 
 class GitBranchRequest(BaseModel):
     project_id: str
     branch_name: str
     from_branch: Optional[str] = "main"
+    action: Optional[str] = "create"  # create | checkout | list
 
 
 class GitStageRequest(BaseModel):
     project_id: str
-    files: List[str]
+    files: Optional[List[str]] = None
+    file_path: Optional[str] = None  # alias used by src/api/git.ts (single-file stage)
 
 
 class GitPushRequest(BaseModel):
@@ -51,12 +174,13 @@ class GitStatusRequest(BaseModel):
 
 class GitAddRequest(BaseModel):
     project_id: str
-    files: List[str]
+    files: Optional[List[str]] = None
 
 
 class GitUnstageRequest(BaseModel):
     project_id: str
-    files: List[str]
+    files: Optional[List[str]] = None
+    file_path: Optional[str] = None  # alias used by src/api/git.ts (single-file unstage)
 
 
 class GitHubCloneRequest(BaseModel):
@@ -84,15 +208,19 @@ async def list_branches(
     request: Request,
     project_id: str,
 ):
-    """List all branches for a project."""
-    return {
-        "branches": [
-            {"name": "main", "current": True, "last_commit": "abc123"},
-            {"name": "develop", "current": False, "last_commit": "def456"},
-            {"name": "feature/new-ui", "current": False, "last_commit": "ghi789"},
-        ],
-        "current": "main",
-    }
+    """List all local branches for a project (real, from a materialized working copy)."""
+    user_id = _user_id_from_request(request)
+    workspace = await _sync_workspace(project_id, user_id)
+    current = _current_branch(workspace)
+    result = _run_git(workspace, "branch", "--list")
+    branches = []
+    for line in (result.stdout or "").splitlines():
+        name = line.strip().lstrip("*").strip()
+        if name:
+            branches.append({"name": name, "current": name == current})
+    if not branches:
+        branches = [{"name": current, "current": True}]
+    return {"branches": branches, "current": current}
 
 
 @git_router.get("/log")
@@ -101,27 +229,35 @@ async def get_git_log(
     project_id: str,
     limit: int = 20,
 ):
-    """Get commit history."""
+    """Get real commit history for a project."""
+    user_id = _user_id_from_request(request)
+    workspace = await _sync_workspace(project_id, user_id)
+    fmt = "%H%x1f%h%x1f%s%x1f%an%x1f%ae%x1f%ad"
+    result = _run_git(
+        workspace, "log", f"-{max(1, min(limit, 200))}",
+        f"--pretty=format:{fmt}", "--date=iso-strict",
+    )
     commits = []
-    for i in range(min(limit, 20)):
-        commits.append({
-            "hash": f"{'abcdef'[i % 6]}{'123456'[i % 6]}" * 5,
-            "short_hash": f"{'abcdef'[i % 6]}{'123456'[i % 6]}" * 2,
-            "message": f"Commit message {i + 1}",
-            "author": "Developer",
-            "email": "dev@example.com",
-            "date": (datetime.now()).isoformat(),
-        })
-    
-    return {
-        "commits": commits,
-        "total": len(commits),
-    }
+    if result.returncode == 0:
+        for line in (result.stdout or "").splitlines():
+            parts = line.split("\x1f")
+            if len(parts) == 6:
+                commits.append({
+                    "hash": parts[0],
+                    "short_hash": parts[1],
+                    "message": parts[2],
+                    "author": parts[3],
+                    "email": parts[4],
+                    "date": parts[5],
+                })
+    return {"commits": commits, "total": len(commits)}
 
 
 @git_router.post("/init")
 async def git_init(payload: GitInitRequest, request: Request):
-    """Initialize a git repository."""
+    """Initialize (materialize + git init) the project's working copy."""
+    user_id = _user_id_from_request(request)
+    await _sync_workspace(payload.project_id, user_id)
     return {
         "success": True,
         "project_id": payload.project_id,
@@ -132,54 +268,94 @@ async def git_init(payload: GitInitRequest, request: Request):
 @git_router.post("/add")
 async def git_add(payload: GitAddRequest, request: Request):
     """Add files to staging."""
-    return {
-        "success": True,
-        "staged_files": payload.files,
-    }
+    user_id = _user_id_from_request(request)
+    workspace = await _sync_workspace(payload.project_id, user_id)
+    files = _effective_files(payload)
+    _run_git(workspace, "add", *(files or ["-A"]))
+    return {"success": True, "staged_files": files}
 
 
 @git_router.post("/stage")
 async def git_stage(payload: GitStageRequest, request: Request):
     """Stage files for commit."""
-    return {
-        "success": True,
-        "staged_files": payload.files,
-    }
+    user_id = _user_id_from_request(request)
+    workspace = await _sync_workspace(payload.project_id, user_id)
+    files = _effective_files(payload)
+    _run_git(workspace, "add", *(files or ["-A"]))
+    return {"success": True, "staged_files": files}
 
 
 @git_router.post("/unstage")
 async def git_unstage(payload: GitUnstageRequest, request: Request):
     """Unstage files."""
-    return {
-        "success": True,
-        "unstaged_files": payload.files,
-    }
+    user_id = _user_id_from_request(request)
+    workspace = await _sync_workspace(payload.project_id, user_id)
+    files = _effective_files(payload)
+    _run_git(workspace, "reset", "HEAD", "--", *(files or ["."]))
+    return {"success": True, "unstaged_files": files}
 
 
 @git_router.post("/commit")
 async def git_commit(payload: GitCommitRequest, request: Request):
-    """Create a commit."""
+    """Create a real commit against the materialized working copy."""
+    user_id = _user_id_from_request(request)
+    workspace = await _sync_workspace(payload.project_id, user_id)
+    files = _effective_files(payload)
+    _run_git(workspace, "add", *(files or ["-A"]))
+    result = _run_git(workspace, "commit", "-m", payload.message)
+    output = (result.stdout or "") + (result.stderr or "")
+    if result.returncode != 0:
+        if "nothing to commit" in output.lower():
+            return {"success": False, "message": "Nothing to commit", "output": output, "commit_hash": None}
+        return {"success": False, "message": "Commit failed", "output": output, "commit_hash": None}
+    commit_hash = (_run_git(workspace, "rev-parse", "HEAD").stdout or "").strip()
     return {
         "success": True,
-        "commit_hash": "abc123def456",
+        "commit_hash": commit_hash,
         "message": payload.message,
-        "files_committed": payload.files or ["all staged files"],
+        "files_committed": files or ["all staged files"],
     }
 
 
 @git_router.post("/branch")
 async def git_branch(payload: GitBranchRequest, request: Request):
-    """Create a new branch."""
+    """Create, checkout, or list branches, depending on payload.action."""
+    user_id = _user_id_from_request(request)
+    workspace = await _sync_workspace(payload.project_id, user_id)
+    action = payload.action or "create"
+
+    if action == "list":
+        current = _current_branch(workspace)
+        result = _run_git(workspace, "branch", "--list")
+        names = [ln.strip().lstrip("*").strip() for ln in (result.stdout or "").splitlines() if ln.strip()]
+        return {"success": True, "branches": names or [current]}
+
+    if action == "checkout":
+        result = _run_git(workspace, "checkout", payload.branch_name)
+        return {
+            "success": result.returncode == 0,
+            "branch_name": payload.branch_name,
+            "output": (result.stdout or "") + (result.stderr or ""),
+        }
+
+    result = _run_git(workspace, "checkout", "-b", payload.branch_name, payload.from_branch or "main")
     return {
-        "success": True,
+        "success": result.returncode == 0,
         "branch_name": payload.branch_name,
         "from_branch": payload.from_branch,
+        "output": (result.stdout or "") + (result.stderr or ""),
     }
 
 
 @git_router.post("/push")
 async def git_push(payload: GitPushRequest, request: Request):
-    """Push to remote."""
+    """Push to remote.
+
+    NOTE: still a stub — pushing a locally-materialized working copy to an
+    arbitrary remote needs a stored remote URL + credentials, which this
+    Hash-Sphere-backed workspace doesn't have. Use /github/sync for the
+    real GitHub push path (used by the Build page today).
+    """
     return {
         "success": True,
         "remote": payload.remote,
@@ -189,12 +365,28 @@ async def git_push(payload: GitPushRequest, request: Request):
 
 @git_router.post("/status")
 async def git_status(payload: GitStatusRequest, request: Request):
-    """Get git status."""
+    """Get real git status for a project's materialized working copy."""
+    user_id = _user_id_from_request(request)
+    workspace = await _sync_workspace(payload.project_id, user_id)
+    result = _run_git(workspace, "status", "--porcelain=v1")
+    staged, modified, untracked = [], [], []
+    for line in (result.stdout or "").splitlines():
+        if len(line) < 4:
+            continue
+        index_status, worktree_status, path = line[0], line[1], line[3:]
+        if index_status == "?" and worktree_status == "?":
+            untracked.append(path)
+            continue
+        if index_status not in (" ", "?"):
+            staged.append(path)
+        if worktree_status not in (" ", "?"):
+            modified.append(path)
+    branch = _current_branch(workspace)
     return {
-        "branch": "main",
-        "staged": [],
-        "modified": [],
-        "untracked": [],
+        "branch": branch,
+        "staged": staged,
+        "modified": modified,
+        "untracked": untracked,
         "ahead": 0,
         "behind": 0,
     }
