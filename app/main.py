@@ -62,9 +62,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         # Production domains
-        "https://dev-swat.com",
-        "https://www.dev-swat.com",
-        "https://api.dev-swat.com",
+        "https://resonant.dev-swat.com",
+        "https://www.resonant.dev-swat.com",
+        "https://api.resonant.dev-swat.com",
         "https://resonantgenesis.xyz",
         "https://www.resonantgenesis.xyz",
         "https://api.resonantgenesis.xyz",
@@ -78,9 +78,9 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
         # HTTP versions for testing
-        "http://dev-swat.com",
-        "http://www.dev-swat.com",
-        "http://api.dev-swat.com",
+        "http://resonant.dev-swat.com",
+        "http://www.resonant.dev-swat.com",
+        "http://api.resonant.dev-swat.com",
         "http://resonantgenesis.xyz",
         "http://www.resonantgenesis.xyz",
         "http://api.resonantgenesis.xyz",
