@@ -17,7 +17,7 @@ def add_cors_headers(response: Response, request: Request) -> Response:
     
     # Define allowed origins from environment variable
     import os
-    frontend_url = os.getenv("AUTH_FRONTEND_URL", "https://resonant.dev-swat.com")
+    frontend_url = os.getenv("AUTH_FRONTEND_URL", "https://dev-swat.com")
     allowed_origins = [
         frontend_url,
         f"https://www.{frontend_url.replace('https://', '')}",
