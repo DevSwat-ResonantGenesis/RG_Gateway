@@ -209,6 +209,101 @@ async def websocket_local_llm_tunnel(websocket: WebSocket):
 # IDE WebSocket proxy REMOVED — ide_platform_service killed
 
 
+# Interactive sandboxed terminal - one hardened per-user container via
+# terminal_sandbox_service, bridged the same way as /ws/chat/{chat_id}.
+# Auth is the same HttpOnly `rg_access_token` cookie every other gateway
+# route uses (see auth_middleware.py:254) - the browser attaches it to the
+# websocket handshake automatically, so there's no JS-readable token to send
+# as a message (unlike /ws/local-llm/tunnel's contract). project_id/org_id
+# are plain (non-secret) query params. Then the
+# {"type":"input"|"resize"|"output",...} contract from
+# RG_Terminal_Sandbox/app/pty_ws.py takes over.
+@router.websocket("/ws/terminal/{terminal_id}")
+async def websocket_terminal_proxy(websocket: WebSocket, terminal_id: str):
+    import logging
+    import os
+    _logger = logging.getLogger("terminal_ws")
+
+    from .auth_middleware import verify_token_for_ws
+
+    terminal_sandbox_url = os.getenv("TERMINAL_SANDBOX_URL", "http://terminal_sandbox_service:8000")
+    internal_key = os.getenv("TERMINAL_SANDBOX_INTERNAL_SERVICE_KEY", "")
+
+    await websocket.accept()
+
+    token = websocket.cookies.get("rg_access_token", "")
+    user_id = await verify_token_for_ws(token)
+    if not user_id:
+        await websocket.send_json({"type": "error", "error": "Invalid or missing session"})
+        await websocket.close(code=4003)
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            create_resp = await client.post(
+                f"{terminal_sandbox_url}/internal/terminals",
+                json={
+                    "terminal_id": terminal_id,
+                    "user_id": user_id,
+                    "org_id": websocket.query_params.get("org_id"),
+                    "project_id": websocket.query_params.get("project_id"),
+                },
+                headers={"x-internal-service-key": internal_key},
+            )
+        if create_resp.status_code == 403:
+            await websocket.send_json({"type": "error", "error": "Terminal owned by another user"})
+            await websocket.close(code=4003)
+            return
+        create_resp.raise_for_status()
+    except Exception as e:
+        _logger.error(f"Failed to create/reuse sandbox terminal {terminal_id}: {e}")
+        await websocket.send_json({"type": "error", "error": "Terminal service unavailable"})
+        await websocket.close(code=1011)
+        return
+
+    pty_ws_url = (
+        terminal_sandbox_url.replace("http://", "ws://").replace("https://", "wss://")
+        + f"/internal/terminals/{terminal_id}/pty?key={internal_key}"
+    )
+
+    try:
+        async with websockets.connect(pty_ws_url) as backend_ws:
+            async def client_to_backend():
+                try:
+                    while True:
+                        message = await websocket.receive_text()
+                        await backend_ws.send(message)
+                except WebSocketDisconnect:
+                    pass
+
+            async def backend_to_client():
+                try:
+                    async for message in backend_ws:
+                        await websocket.send_text(message)
+                except Exception:
+                    pass
+
+            done, pending = await asyncio.wait(
+                [asyncio.create_task(client_to_backend()), asyncio.create_task(backend_to_client())],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+    except websockets.exceptions.InvalidStatusCode as e:
+        try:
+            await websocket.send_json({"type": "error", "error": f"Backend rejected: {e.status_code}"})
+            await websocket.close()
+        except Exception:
+            pass
+    except Exception as e:
+        _logger.error(f"Terminal ws bridge error for {terminal_id}: {e}")
+        try:
+            await websocket.send_json({"type": "error", "error": str(e)})
+            await websocket.close()
+        except Exception:
+            pass
+
+
 # ============================================
 # BLOCKCHAIN SERVICE ROUTES
 # ============================================
