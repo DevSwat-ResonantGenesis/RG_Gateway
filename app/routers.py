@@ -304,6 +304,33 @@ async def websocket_terminal_proxy(websocket: WebSocket, terminal_id: str):
             pass
 
 
+# Generate-or-fetch the sandboxed terminal's SSH public key for the current
+# user - called right after they register a host in account settings (see
+# UserSshHost/ssh_hosts_routes.py in RG_Auth). Same session cookie auth as
+# every other gateway route; proxies to RG_Terminal_Sandbox's internal-only
+# endpoint using the same shared secret the WS proxy above already uses.
+@router.post("/terminal/ssh-key")
+async def get_terminal_ssh_key(request: Request):
+    import os
+
+    user_id = request.headers.get("x-user-id")
+    if not user_id:
+        return JSONResponse(status_code=401, content={"error": "Authentication required"})
+
+    terminal_sandbox_url = os.getenv("TERMINAL_SANDBOX_URL", "http://terminal_sandbox_service:8000")
+    internal_key = os.getenv("TERMINAL_SANDBOX_INTERNAL_SERVICE_KEY", "")
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{terminal_sandbox_url}/internal/ssh-keys/{user_id}",
+                headers={"x-internal-service-key": internal_key},
+            )
+        return JSONResponse(status_code=resp.status_code, content=resp.json())
+    except Exception as e:
+        return JSONResponse(status_code=503, content={"error": f"Terminal service unavailable: {e}"})
+
+
 # ============================================
 # BLOCKCHAIN SERVICE ROUTES
 # ============================================

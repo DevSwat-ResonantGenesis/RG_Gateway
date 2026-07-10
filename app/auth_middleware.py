@@ -169,6 +169,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/api/mining/dashboard/",
             "/api/v1/mining/dashboard/",
             "/api/v1/api/mining/dashboard/",
+            # Project-file API for trusted backend services acting on a user's
+            # behalf (RG_Terminal_Sandbox, RG_Agent_Engine project_builder) -
+            # these callers have no user session JWT, only a user_id. NOT
+            # actually public: code_routes.py's _require_internal_service_key
+            # checks x-internal-service-key on every route under this prefix -
+            # this exemption only skips the cookie/JWT check that a backend
+            # service can't satisfy.
+            "/api/v1/code/internal/",
         )
 
         import os

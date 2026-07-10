@@ -4,15 +4,34 @@ These endpoints provide code operations including project management,
 LSP features, and code generation.
 """
 
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 
 router = APIRouter(prefix="/code", tags=["code"])
+
+
+def _require_internal_service_key(request: Request) -> None:
+    """Guard for /code/internal/* routes.
+
+    These routes exist so backend services (RG_Terminal_Sandbox,
+    RG_Agent_Engine) can read/write a user's project files the same way
+    the browser IDE does, without a user session JWT. auth_middleware.py
+    exempts the /code/internal/ prefix from normal cookie/JWT auth, so
+    this header check is the ONLY thing standing between these routes and
+    an unauthenticated caller - mirrors RG_Auth's
+    /auth/internal/user-api-keys/{user_id} pattern.
+    """
+    internal_key = request.headers.get("x-internal-service-key")
+    expected = os.getenv("INTERNAL_SERVICE_KEY", "")
+    if not expected or internal_key != expected:
+        raise HTTPException(status_code=403, detail="Internal endpoint - access denied")
 
 
 # ============================================
@@ -102,47 +121,48 @@ async def list_user_projects(request: Request):
     }
 
 
-@router.get("/project/files")
-async def get_project_files(
-    request: Request,
-    project_id: str,
-):
-    """Get project file tree from memory service.
-    
-    Fetches files stored in Hash Sphere memory, excluding archived files.
-    Returns files with their content for immediate use in IDE.
-    """
-    user_id = request.headers.get("x-user-id")
-    
+async def _get_project_files(project_id: str, user_id: Optional[str]) -> Dict[str, Any]:
+    """Fetch a project's file tree (with content) from Memory Service (Hash Sphere)."""
     try:
-        import httpx
         async with httpx.AsyncClient() as client:
-            # Use the correct endpoint: /memory/project/files
-            memory_url = f"http://memory_service:8000/memory/project/files"
+            memory_url = "http://memory_service:8000/memory/project/files"
             response = await client.get(
                 memory_url,
                 params={"project_id": project_id},
                 headers={"x-user-id": user_id} if user_id else {},
                 timeout=30.0
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 files = data.get("files", [])
-                
-                return {
-                    "project_id": project_id,
-                    "files": files,
-                }
+                return {"project_id": project_id, "files": files}
     except Exception as e:
         # Log error but don't fail - return empty files
         print(f"Memory service error listing files: {e}")
-    
+
     # Return empty files if memory service fails or no files found
-    return {
-        "project_id": project_id,
-        "files": [],
-    }
+    return {"project_id": project_id, "files": []}
+
+
+@router.get("/project/files")
+async def get_project_files(
+    request: Request,
+    project_id: str,
+):
+    """Get project file tree from memory service.
+
+    Fetches files stored in Hash Sphere memory, excluding archived files.
+    Returns files with their content for immediate use in IDE.
+    """
+    return await _get_project_files(project_id, request.headers.get("x-user-id"))
+
+
+@router.get("/internal/project/files")
+async def get_project_files_internal(request: Request, project_id: str):
+    """Backend-service variant of GET /project/files - see _require_internal_service_key."""
+    _require_internal_service_key(request)
+    return await _get_project_files(project_id, request.headers.get("x-user-id"))
 
 
 @router.get("/project/download")
@@ -173,32 +193,21 @@ async def create_project(
     }
 
 
-@router.post("/project/create-file")
-async def create_project_file(request: Request):
-    """Create a new file (or folder) in a project.
+async def _create_project_file(
+    project_id: Optional[str],
+    file_path: str,
+    is_folder: bool,
+    content: str,
+    language: Optional[str],
+    user_id: Optional[str],
+) -> Dict[str, Any]:
+    """Same Memory Service (Hash Sphere) persistence used by create-file and write.
 
-    code.ts's createProjectFile() used to target /project/create, which is
-    actually create_project above (a different, unrelated stub expecting
-    name/template/language - it never persisted anything). This is the
-    real handler: same Memory Service (Hash Sphere) persistence as
-    write_project_file, since a freshly-created file and an updated file
-    both just need their content stored.
-
-    Folders have no content of their own in this content-addressed store
-    - there's nothing to persist for an empty folder, so this is a no-op
+    Folders have no content of their own in this content-addressed store -
+    there's nothing to persist for an empty folder, so this is a no-op
     success for is_folder=True (the folder becomes visible once a file is
     created inside it).
     """
-    import httpx
-
-    body = await request.json()
-    project_id = body.get("project_id") or request.query_params.get("project_id")
-    file_path = body.get("file_path")
-    is_folder = body.get("is_folder", False)
-    content = body.get("content", "")
-    language = body.get("language")
-    user_id = request.headers.get("x-user-id")
-
     if not file_path:
         return {"success": False, "message": "file_path is required", "path": ""}
 
@@ -240,6 +249,41 @@ async def create_project_file(request: Request):
     except Exception as e:
         print(f"Memory service error creating file: {e}")
         return {"success": False, "message": str(e), "path": file_path}
+
+
+@router.post("/project/create-file")
+async def create_project_file(request: Request):
+    """Create a new file (or folder) in a project.
+
+    code.ts's createProjectFile() used to target /project/create, which is
+    actually create_project above (a different, unrelated stub expecting
+    name/template/language - it never persisted anything). This is the
+    real handler.
+    """
+    body = await request.json()
+    return await _create_project_file(
+        project_id=body.get("project_id") or request.query_params.get("project_id"),
+        file_path=body.get("file_path"),
+        is_folder=body.get("is_folder", False),
+        content=body.get("content", ""),
+        language=body.get("language"),
+        user_id=request.headers.get("x-user-id"),
+    )
+
+
+@router.post("/internal/project/create-file")
+async def create_project_file_internal(request: Request):
+    """Backend-service variant of POST /project/create-file - see _require_internal_service_key."""
+    _require_internal_service_key(request)
+    body = await request.json()
+    return await _create_project_file(
+        project_id=body.get("project_id") or request.query_params.get("project_id"),
+        file_path=body.get("file_path"),
+        is_folder=body.get("is_folder", False),
+        content=body.get("content", ""),
+        language=body.get("language"),
+        user_id=request.headers.get("x-user-id"),
+    )
 
 
 @router.post("/project/archive")
@@ -403,32 +447,13 @@ async def upload_project(request: Request):
     }
 
 
-@router.post("/project/read")
-async def read_project_file(request: Request):
-    """Read a file from a project.
-    
-    Fetches file content from Memory Service (Hash Sphere).
-    """
-    import httpx
-
-    body = await request.json()
-    # code.ts's readProjectFile sends project_id only as a query param
-    # (?project_id=...), never in the body - fall back to it, otherwise
-    # this is always None and every read effectively queries the wrong
-    # (null) project.
-    project_id = body.get("project_id") or request.query_params.get("project_id")
-    file_path = body.get("file_path")
-    user_id = request.headers.get("x-user-id")
-
+async def _read_project_file(project_id: Optional[str], file_path: str, user_id: Optional[str]) -> Dict[str, Any]:
+    """Fetch file content from Memory Service (Hash Sphere)."""
     if not file_path:
-        return {
-            "exists": False,
-            "error": "file_path is required",
-        }
-    
+        return {"exists": False, "error": "file_path is required"}
+
     try:
         async with httpx.AsyncClient() as client:
-            # Query memory service for file content
             memory_url = "http://memory_service:8000/memory/query"
             response = await client.post(
                 memory_url,
@@ -445,7 +470,7 @@ async def read_project_file(request: Request):
                 headers={"x-user-id": user_id} if user_id else {},
                 timeout=10.0
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 results = data.get("results", [])
@@ -460,42 +485,40 @@ async def read_project_file(request: Request):
                     }
     except Exception as e:
         print(f"Memory service error reading file: {e}")
-    
+
     # File not found in memory service
-    return {
-        "exists": False,
-        "project_id": project_id,
-        "file_path": file_path,
-        "content": "",
-    }
+    return {"exists": False, "project_id": project_id, "file_path": file_path, "content": ""}
 
 
-@router.post("/project/write")
-async def write_project_file(request: Request):
-    """Write a file to a project.
-    
-    Stores file content in Memory Service (Hash Sphere).
+@router.post("/project/read")
+async def read_project_file(request: Request):
+    """Read a file from a project.
+
+    Fetches file content from Memory Service (Hash Sphere).
     """
-    import httpx
-
     body = await request.json()
-    # code.ts's writeProjectFile sends project_id only as a query param
+    # code.ts's readProjectFile sends project_id only as a query param
     # (?project_id=...), never in the body - fall back to it, otherwise
-    # this is always None and the file gets stored with no project_id,
-    # so it can never be found again by a later list/read for the real
-    # project_id (this is why files disappeared on refresh).
+    # this is always None and every read effectively queries the wrong
+    # (null) project.
     project_id = body.get("project_id") or request.query_params.get("project_id")
-    file_path = body.get("file_path")
-    content = body.get("content", "")
-    user_id = request.headers.get("x-user-id")
+    return await _read_project_file(project_id, body.get("file_path"), request.headers.get("x-user-id"))
 
+
+@router.post("/internal/project/read")
+async def read_project_file_internal(request: Request):
+    """Backend-service variant of POST /project/read - see _require_internal_service_key."""
+    _require_internal_service_key(request)
+    body = await request.json()
+    project_id = body.get("project_id") or request.query_params.get("project_id")
+    return await _read_project_file(project_id, body.get("file_path"), request.headers.get("x-user-id"))
+
+
+async def _write_project_file(project_id: Optional[str], file_path: str, content: str, user_id: Optional[str]) -> Dict[str, Any]:
+    """Store file content in Memory Service (Hash Sphere)."""
     if not file_path:
-        return {
-            "written": False,
-            "error": "file_path is required",
-        }
-    
-    # Determine language from file extension
+        return {"written": False, "error": "file_path is required"}
+
     ext = file_path.split('.')[-1] if '.' in file_path else ''
     language_map = {
         'py': 'python', 'js': 'javascript', 'ts': 'typescript',
@@ -504,10 +527,9 @@ async def write_project_file(request: Request):
         'html': 'html', 'yml': 'yaml', 'yaml': 'yaml',
     }
     language = language_map.get(ext, 'plaintext')
-    
+
     try:
         async with httpx.AsyncClient() as client:
-            # Store in memory service (Hash Sphere)
             memory_url = "http://memory_service:8000/memory/ingest"
             response = await client.post(
                 memory_url,
@@ -525,7 +547,7 @@ async def write_project_file(request: Request):
                 headers={"x-user-id": user_id} if user_id else {},
                 timeout=30.0
             )
-            
+
             if response.status_code == 200:
                 return {
                     "project_id": project_id,
@@ -533,17 +555,39 @@ async def write_project_file(request: Request):
                     "written": True,
                     "written_at": datetime.now().isoformat(),
                 }
-            else:
-                return {
-                    "written": False,
-                    "error": f"Memory service returned {response.status_code}",
-                }
+            return {"written": False, "error": f"Memory service returned {response.status_code}"}
     except Exception as e:
         print(f"Memory service error writing file: {e}")
-        return {
-            "written": False,
-            "error": str(e),
-        }
+        return {"written": False, "error": str(e)}
+
+
+@router.post("/project/write")
+async def write_project_file(request: Request):
+    """Write a file to a project.
+
+    Stores file content in Memory Service (Hash Sphere).
+    """
+    body = await request.json()
+    # code.ts's writeProjectFile sends project_id only as a query param
+    # (?project_id=...), never in the body - fall back to it, otherwise
+    # this is always None and the file gets stored with no project_id,
+    # so it can never be found again by a later list/read for the real
+    # project_id (this is why files disappeared on refresh).
+    project_id = body.get("project_id") or request.query_params.get("project_id")
+    return await _write_project_file(
+        project_id, body.get("file_path"), body.get("content", ""), request.headers.get("x-user-id")
+    )
+
+
+@router.post("/internal/project/write")
+async def write_project_file_internal(request: Request):
+    """Backend-service variant of POST /project/write - see _require_internal_service_key."""
+    _require_internal_service_key(request)
+    body = await request.json()
+    project_id = body.get("project_id") or request.query_params.get("project_id")
+    return await _write_project_file(
+        project_id, body.get("file_path"), body.get("content", ""), request.headers.get("x-user-id")
+    )
 
 
 @router.post("/project/delete-file")
@@ -632,13 +676,20 @@ async def generate_project(request: Request):
     body = await request.json()
     user_id = request.headers.get("x-user-id")
     org_id = request.headers.get("x-org-id")
-    
+    # If the caller has a project open in the IDE, reuse its project_id so
+    # generated files land in the same Hash Sphere project instead of an
+    # always-fresh, disconnected workspace. Mint one if this is a standalone
+    # Build with no IDE project open, so downstream (project_builder) always
+    # gets a real id to key its own file writes with.
+    project_id = body.get("project_id") or str(uuid4())
+
     # Proxy to Project Builder service
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
                 "http://agent_engine_service:8000/project-builder/generate",
                 json={
+                    "project_id": project_id,
                     "description": body.get("description", body.get("prompt", "")),
                     "project_type": body.get("project_type", "react"),
                     "files": body.get("files"),
