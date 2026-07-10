@@ -253,11 +253,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
         auth_header = request.headers.get("authorization")
         token = None
         api_key = (request.headers.get("x-api-key") or "").strip() or None
+        workspace_token = None
 
         if auth_header and auth_header.lower().startswith("bearer "):
             candidate = auth_header.split(" ", 1)[1].strip()
-            # If this is an RG- API key, treat it as API key auth, not JWT.
-            if candidate.startswith("RG-"):
+            # RGW- (scoped workspace token, minted for one workspace/user,
+            # injected into that workspace's sandboxed terminal - see
+            # RG_Auth's WorkspaceAccessToken) is checked before the RG-
+            # org-level API key below; the two prefixes never collide
+            # ("RGW-...".startswith("RG-") is False - the char after "RG"
+            # differs), but scoped tokens get their own verify endpoint and
+            # carry enforced `scopes`, unlike RG- keys.
+            if candidate.startswith("RGW-"):
+                workspace_token = candidate
+            elif candidate.startswith("RG-"):
                 api_key = candidate
             else:
                 token = candidate
@@ -353,6 +362,46 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.state.user_id = user_id
             request.state.role = user_role
             request.state.org_id = org_id
+
+            response = await call_next(request)
+            return response
+
+        if not token and workspace_token:
+            import os
+            try:
+                async with httpx.AsyncClient() as client:
+                    verify_resp = await client.post(
+                        f"{settings.AUTH_URL}/auth/internal/workspace-tokens/verify",
+                        json={"token": workspace_token},
+                        headers={"x-internal-service-key": os.getenv("INTERNAL_SERVICE_KEY", "")},
+                        timeout=5.0,
+                    )
+            except httpx.RequestError:
+                return add_cors_headers(Response(
+                    status_code=502,
+                    content=b"Auth service unavailable",
+                ), request)
+
+            if verify_resp.status_code != 200:
+                return add_cors_headers(Response(
+                    status_code=verify_resp.status_code,
+                    content=verify_resp.content,
+                ), request)
+
+            data = verify_resp.json() or {}
+            user_id = data.get("user_id")
+            workspace_id = data.get("workspace_id")
+            scopes = data.get("scopes") or []
+            if not user_id or not workspace_id:
+                return add_cors_headers(Response(status_code=401, content=b"Invalid workspace token"), request)
+
+            headers = list(request.scope.get("headers", []))
+            headers.append((b"x-user-id", str(user_id).encode("utf-8")))
+            headers.append((b"x-workspace-id", str(workspace_id).encode("utf-8")))
+            headers.append((b"x-token-scopes", ",".join(scopes).encode("utf-8")))
+            request.scope["headers"] = headers
+
+            request.state.user_id = user_id
 
             response = await call_next(request)
             return response
