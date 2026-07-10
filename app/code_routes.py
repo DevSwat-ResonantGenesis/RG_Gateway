@@ -698,9 +698,10 @@ async def generate_project(request: Request):
                 headers={
                     "x-user-id": user_id or "",
                     "x-org-id": org_id or "",
+                    **({"x-token-scopes": request.headers["x-token-scopes"]} if "x-token-scopes" in request.headers else {}),
                 },
             )
-            
+
             if response.status_code == 200:
                 return response.json()
             elif response.status_code == 401:
@@ -742,13 +743,20 @@ async def _proxy_to_project_builder(
     
     user_id = request.headers.get("x-user-id")
     org_id = request.headers.get("x-org-id")
-    
+    token_scopes = request.headers.get("x-token-scopes")
+
     url = f"http://agent_engine_service:8000/project-builder{path}"
     headers = {
         "x-user-id": user_id or "",
         "x-org-id": org_id or "",
     }
-    
+    # Forward scope info when the caller used an RGW- workspace token
+    # (auth_middleware.py injects this) - without it, Agent Engine's
+    # scope_check.require_scope silently treats every call through this
+    # proxy as an unrestricted normal session.
+    if token_scopes is not None:
+        headers["x-token-scopes"] = token_scopes
+
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             if method == "GET":
