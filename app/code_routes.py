@@ -173,6 +173,75 @@ async def create_project(
     }
 
 
+@router.post("/project/create-file")
+async def create_project_file(request: Request):
+    """Create a new file (or folder) in a project.
+
+    code.ts's createProjectFile() used to target /project/create, which is
+    actually create_project above (a different, unrelated stub expecting
+    name/template/language - it never persisted anything). This is the
+    real handler: same Memory Service (Hash Sphere) persistence as
+    write_project_file, since a freshly-created file and an updated file
+    both just need their content stored.
+
+    Folders have no content of their own in this content-addressed store
+    - there's nothing to persist for an empty folder, so this is a no-op
+    success for is_folder=True (the folder becomes visible once a file is
+    created inside it).
+    """
+    import httpx
+
+    body = await request.json()
+    project_id = body.get("project_id") or request.query_params.get("project_id")
+    file_path = body.get("file_path")
+    is_folder = body.get("is_folder", False)
+    content = body.get("content", "")
+    language = body.get("language")
+    user_id = request.headers.get("x-user-id")
+
+    if not file_path:
+        return {"success": False, "message": "file_path is required", "path": ""}
+
+    if is_folder:
+        return {"success": True, "message": "Folder created", "path": file_path}
+
+    if not language:
+        ext = file_path.split('.')[-1] if '.' in file_path else ''
+        language_map = {
+            'py': 'python', 'js': 'javascript', 'ts': 'typescript',
+            'tsx': 'typescriptreact', 'jsx': 'javascriptreact',
+            'json': 'json', 'md': 'markdown', 'css': 'css',
+            'html': 'html', 'yml': 'yaml', 'yaml': 'yaml',
+        }
+        language = language_map.get(ext, 'plaintext')
+
+    try:
+        async with httpx.AsyncClient() as client:
+            memory_url = "http://memory_service:8000/memory/ingest"
+            response = await client.post(
+                memory_url,
+                json={
+                    "content": content,
+                    "source": "ide_create",
+                    "metadata": {
+                        "project_id": project_id,
+                        "file_path": file_path,
+                        "type": "file",
+                        "language": language,
+                        "is_archived": False,
+                    }
+                },
+                headers={"x-user-id": user_id} if user_id else {},
+                timeout=30.0
+            )
+            if response.status_code == 200:
+                return {"success": True, "message": "File created", "path": file_path, "indexed": True}
+            return {"success": False, "message": f"Memory service returned {response.status_code}", "path": file_path}
+    except Exception as e:
+        print(f"Memory service error creating file: {e}")
+        return {"success": False, "message": str(e), "path": file_path}
+
+
 @router.post("/project/archive")
 async def archive_project(request: Request):
     """Archive a project."""
@@ -341,12 +410,16 @@ async def read_project_file(request: Request):
     Fetches file content from Memory Service (Hash Sphere).
     """
     import httpx
-    
+
     body = await request.json()
-    project_id = body.get("project_id")
+    # code.ts's readProjectFile sends project_id only as a query param
+    # (?project_id=...), never in the body - fall back to it, otherwise
+    # this is always None and every read effectively queries the wrong
+    # (null) project.
+    project_id = body.get("project_id") or request.query_params.get("project_id")
     file_path = body.get("file_path")
     user_id = request.headers.get("x-user-id")
-    
+
     if not file_path:
         return {
             "exists": False,
@@ -404,13 +477,18 @@ async def write_project_file(request: Request):
     Stores file content in Memory Service (Hash Sphere).
     """
     import httpx
-    
+
     body = await request.json()
-    project_id = body.get("project_id")
+    # code.ts's writeProjectFile sends project_id only as a query param
+    # (?project_id=...), never in the body - fall back to it, otherwise
+    # this is always None and the file gets stored with no project_id,
+    # so it can never be found again by a later list/read for the real
+    # project_id (this is why files disappeared on refresh).
+    project_id = body.get("project_id") or request.query_params.get("project_id")
     file_path = body.get("file_path")
     content = body.get("content", "")
     user_id = request.headers.get("x-user-id")
-    
+
     if not file_path:
         return {
             "written": False,
