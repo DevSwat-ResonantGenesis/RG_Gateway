@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import time
 
-from .reverse_proxy import proxy
+from .reverse_proxy import proxy, proxy_public
 # Add CASCADE edge capture
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 try:
@@ -105,6 +105,11 @@ async def memory_proxy_v1(request: Request, path: str):
     # Get request data
     headers = dict(request.headers)
     headers.pop("host", None)
+    # If no Authorization header, inject session token from cookie for superuser access
+    if "authorization" not in {k.lower(): v for k, v in headers.items()}:
+        cookie_token = request.cookies.get("rg_access_token")
+        if cookie_token:
+            headers["authorization"] = f"Bearer {cookie_token}"
 
     # Inject user context from auth middleware (critical for per-user data)
     user_id = getattr(request.state, "user_id", None)
@@ -168,6 +173,11 @@ async def owner_auth_proxy(request: Request, path: str):
     
     headers = dict(request.headers)
     headers.pop("host", None)
+    # If no Authorization header, inject session token from cookie for superuser access
+    if "authorization" not in {k.lower(): v for k, v in headers.items()}:
+        cookie_token = request.cookies.get("rg_access_token")
+        if cookie_token:
+            headers["authorization"] = f"Bearer {cookie_token}"
     
     try:
         async with httpx.AsyncClient() as http_client:
@@ -209,6 +219,11 @@ async def chat_proxy(request: Request, path: str):
     # Get request data
     headers = dict(request.headers)
     headers.pop("host", None)
+    # If no Authorization header, inject session token from cookie for superuser access
+    if "authorization" not in {k.lower(): v for k, v in headers.items()}:
+        cookie_token = request.cookies.get("rg_access_token")
+        if cookie_token:
+            headers["authorization"] = f"Bearer {cookie_token}"
     
     # Use HTTP client
     http_client = httpx.AsyncClient()
@@ -494,7 +509,7 @@ app.include_router(usage_router)
 # Frontend calls /auth/settings/agents/* but these are now in agent_engine_service
 # This route proxies to agent_engine_service for backward compatibility
 
-from .reverse_proxy import proxy
+from .reverse_proxy import proxy, proxy_public
 
 @app.api_route("/auth/settings/agents/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 @edge_capture_decorator("gateway", "auth_settings_agents_proxy")
@@ -655,6 +670,44 @@ async def billing_proxy_legacy(path: str, request: Request):
     """Proxy billing requests without /api/v1 prefix for legacy clients."""
     return await proxy("billing-user", f"billing/{path}", request)
 
+
+# Legacy crypto proxy (no /api/v1 prefix) - for frontend wallet page
+@app.api_route("/crypto/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+@edge_capture_decorator("gateway", "crypto_proxy_legacy")
+async def crypto_proxy_legacy(path: str, request: Request):
+    """Proxy crypto requests without /api/v1 prefix for frontend compatibility."""
+    return await proxy("crypto", f"crypto/{path}", request)
+
+@app.api_route("/crypto", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+@edge_capture_decorator("gateway", "crypto_base_proxy_legacy")
+async def crypto_base_proxy_legacy(request: Request):
+    """Proxy base /crypto requests without /api/v1 prefix."""
+    return await proxy("crypto", "crypto/", request)
+
+# Frontend billing compatibility routes
+@app.api_route("/api/billing/pricing", methods=["GET", "OPTIONS"])
+@app.api_route("/api/billing/pricing/", methods=["GET", "OPTIONS"])
+async def api_billing_pricing_direct(request: Request):
+    return await proxy_public("billing-user", "billing/pricing", request)
+
+@app.api_route("/api/billing/checkout/subscription", methods=["POST", "OPTIONS"])
+async def api_billing_checkout_subscription_direct(request: Request):
+    if request.method.upper() == "OPTIONS":
+        return Response(status_code=204)
+    return await proxy("billing-user", "billing/checkout/subscription", request)
+
+@app.api_route("/api/billing/checkout/credits", methods=["POST", "OPTIONS"])
+async def api_billing_checkout_credits_direct(request: Request):
+    if request.method.upper() == "OPTIONS":
+        return Response(status_code=204)
+    return await proxy("billing-user", "billing/checkout/credits", request)
+
+@app.api_route("/api/auth/refresh", methods=["POST", "OPTIONS"])
+@app.api_route("/api/auth/refresh/", methods=["POST", "OPTIONS"])
+async def api_auth_refresh_direct(request: Request):
+    if request.method.upper() == "OPTIONS":
+        return Response(status_code=204)
+    return await proxy("auth", "auth/refresh", request)
 
 # Legacy resonant-chat proxy (no /api/v1 prefix) - for frontend compatibility
 @app.api_route("/resonant-chat/analytics", methods=["GET", "POST", "DELETE", "OPTIONS"])

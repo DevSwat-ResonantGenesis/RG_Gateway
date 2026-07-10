@@ -94,6 +94,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Pricing endpoint (public - needed for pricing page)
             "/billing/pricing",
             "/billing/packs",
+            "/api/billing/pricing",
+            "/api/billing/pricing/",
+            "/api/billing/packs",
+            "/api/billing/packs/",
             "/api/v1/api/billing/pricing",
             "/api/v1/api/billing/packs",
             "/api/v1/api/billing/pricing/",
