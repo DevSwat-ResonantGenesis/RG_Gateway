@@ -60,6 +60,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/api/v1/api/auth/login",
             "/api/v1/api/auth/signup",
             "/api/v1/api/auth/providers",
+            "/billing/checkout/consulting-workshop",
+            "/api/billing/checkout/consulting-workshop",
         }
         # SECURITY: Minimal public prefixes — only what MUST be unauthenticated.
         # REMOVED: /docs, /openapi, /redoc (exposed full 509KB API schema)
@@ -106,6 +108,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/api/v1/api/v1/api/billing/packs",
             "/api/v1/api/v1/api/billing/pricing/",
             "/api/v1/api/v1/api/billing/packs/",
+            # Consulting workshop endpoints (public - guest checkout allowed)
+            "/billing/checkout/consulting-workshop",
+            "/api/billing/checkout/consulting-workshop",
+            "/api/v1/api/billing/checkout/consulting-workshop",
+            "/billing/consulting-workshop",
+            "/api/billing/consulting-workshop",
+            "/api/v1/api/billing/consulting-workshop",
             # Stripe webhook (Stripe sends without auth)
             "/billing/webhook/stripe",
             "/api/billing/stripe/webhook",
