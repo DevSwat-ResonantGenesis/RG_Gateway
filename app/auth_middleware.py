@@ -117,6 +117,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/api/v1/api/billing/consulting-workshop",
             # Stripe webhook (Stripe sends without auth)
             "/billing/webhook/stripe",
+            "/billing/stripe/webhook",
             "/api/billing/stripe/webhook",
             "/webhook/stripe",
             # External webhook triggers

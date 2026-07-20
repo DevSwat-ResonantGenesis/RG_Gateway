@@ -663,6 +663,32 @@ async def agents_base_proxy_legacy(request: Request):
     return await proxy("agents", "agents/", request)
 
 
+# Stripe webhook - MUST be before catch-all billing route (no auth required)
+# Note: nginx strips /api/ prefix, so we need both paths
+@app.api_route("/billing/webhook/stripe", methods=["POST"])
+@edge_capture_decorator("gateway", "billing_webhook_stripe")
+async def billing_webhook_stripe_direct(request: Request):
+    """Stripe webhook - public endpoint, routes to billing_service."""
+    return await proxy_public("billing-user", "billing/webhook/stripe", request)
+
+@app.api_route("/billing/stripe/webhook", methods=["POST"])
+@edge_capture_decorator("gateway", "billing_stripe_webhook")
+async def billing_stripe_webhook_direct(request: Request):
+    """Stripe webhook - public endpoint (nginx strips /api/ prefix), routes to billing_service."""
+    return await proxy_public("billing-user", "billing/webhook/stripe", request)
+
+@app.api_route("/api/billing/stripe/webhook", methods=["POST"])
+@edge_capture_decorator("gateway", "api_billing_webhook_stripe")
+async def api_billing_webhook_stripe_direct(request: Request):
+    """Stripe webhook - public endpoint, routes to billing_service."""
+    return await proxy_public("billing-user", "billing/webhook/stripe", request)
+
+@app.api_route("/webhook/stripe", methods=["POST"])
+@edge_capture_decorator("gateway", "webhook_stripe_direct")
+async def webhook_stripe_direct(request: Request):
+    """Stripe webhook alias - public endpoint, routes to billing_service."""
+    return await proxy_public("billing-user", "billing/webhook/stripe", request)
+
 # Legacy billing proxy (no /api/v1 prefix)
 @app.api_route("/billing/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 @edge_capture_decorator("gateway", "billing_proxy_legacy")
