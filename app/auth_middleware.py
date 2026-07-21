@@ -520,6 +520,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.crypto_hash = data.get("crypto_hash")
         request.state.user_hash = data.get("user_hash")
         request.state.universe_id = data.get("universe_id")
+        request.state.email = data.get("email")
+        request.state.name = data.get("full_name") or data.get("name")
 
         response = await call_next(request)
         return response

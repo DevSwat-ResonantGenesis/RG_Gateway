@@ -78,6 +78,10 @@ async def proxy(service: str, path: str, request: Request) -> Response:
         headers["x-org-id"] = request.state.org_id
     if hasattr(request.state, "role") and request.state.role:
         headers["x-user-role"] = request.state.role
+    if hasattr(request.state, "email") and request.state.email:
+        headers["x-user-email"] = request.state.email
+    if hasattr(request.state, "name") and request.state.name:
+        headers["x-user-name"] = request.state.name
     if getattr(request.state, "plan", None):
         headers["x-user-plan"] = str(request.state.plan)
     if getattr(request.state, "is_superuser", False):
