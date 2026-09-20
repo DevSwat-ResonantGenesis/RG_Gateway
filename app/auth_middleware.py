@@ -213,6 +213,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/api/resonant-chat/providers",
             "/api/v1/rabbit",
             "/rabbit",
+            "/api/v1/agents",
+            "/api/v1/agents/",
+            "/api/resonant-chat/conversations",
+            "/resonant-chat/conversations",
         )
         is_optional_auth = any(path == p or path.startswith(p + "/") for p in optional_auth_paths)
         if is_optional_auth:
@@ -255,6 +259,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         request.state.user_id = user_id
                 except Exception as e:
                     logger.debug(f"[AUTH] Optional auth failed for {path}: {e}")
+            else:
+                # No token provided for optional auth - set default anonymous user context
+                # This allows the agent engine to return empty lists instead of 401
+                headers = list(request.scope.get("headers", []))
+                headers.append((b"x-user-id", b"00000000-0000-0000-0000-000000000000"))
+                headers.append((b"x-user-role", b"anonymous"))
+                headers.append((b"x-user-plan", b"free"))
+                headers.append((b"x-org-id", b"00000000-0000-0000-0000-000000000000"))
+                request.scope["headers"] = headers
 
             return await call_next(request)
 
@@ -480,17 +493,40 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # If we can't decode token, continue (auth service already validated)
             pass
 
-        # Get user role, plan, and org from auth response
+        # Get user role, and org from auth response (plan comes from billing cache)
         user_role = data.get("role", "user")
-        user_plan = data.get("plan", "free")
         org_id = data.get("org_id") or data.get("organization_id") or user_id  # Fallback to user_id
+
+        # Get plan status from billing cache (Redis)
+        # Billing controls plan, credits, and can override role on expiration
+        billing_status = None
+        user_plan = "free"  # Default plan when billing cache is unavailable
+        try:
+            from .billing_cache import billing_cache
+            billing_status = await billing_cache.get_plan_status(str(org_id))
+            if billing_status:
+                user_plan = billing_status.get("plan", "free")
+        except Exception as e:
+            logger.debug(f"[AUTH] Failed to get billing status: {e}")
+
+        # Apply billing credit status (role now encodes plan, no plan header needed)
+        if billing_status:
+            credits_exhausted = billing_status.get("credits_exhausted", False)
+            subscription_status = billing_status.get("subscription_status", "active")
+
+            # Set credit status header
+            credit_status = "active" if not credits_exhausted else "exhausted"
+        else:
+            # Billing cache unavailable - proceed with default (free tier) instead of failing
+            logger.warning(f"[AUTH] Billing cache unavailable for org {org_id} - using default (free tier)")
+            credit_status = "active"
 
         # Inject user headers into downstream request
         headers = list(request.scope.get("headers", []))
         headers.append((b"x-user-id", str(user_id).encode("utf-8")))
         headers.append((b"x-user-role", str(user_role).encode("utf-8")))
-        headers.append((b"x-user-plan", str(user_plan).encode("utf-8")))
         headers.append((b"x-org-id", str(org_id).encode("utf-8")))
+        headers.append((b"x-credit-status", str(credit_status).encode("utf-8")))
         
         # Pass superuser status (for owner dashboard access validation)
         is_superuser = data.get("is_superuser", False)

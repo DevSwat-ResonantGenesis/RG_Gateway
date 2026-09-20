@@ -68,6 +68,9 @@ app.add_middleware(
         "https://resonantgenesis.xyz",
         "https://www.resonantgenesis.xyz",
         "https://api.resonantgenesis.xyz",
+        # Vercel domains (for frontend deployment)
+        "https://*.vercel.app",
+        "https://resonantgenesis.vercel.app",
         "http://157.230.12.225",
         "https://157.230.12.225",
         # Development domains (for local testing)
@@ -84,6 +87,9 @@ app.add_middleware(
         "http://resonantgenesis.xyz",
         "http://www.resonantgenesis.xyz",
         "http://api.resonantgenesis.xyz",
+        # Vercel domains (for frontend deployment)
+        "http://*.vercel.app",
+        "http://resonantgenesis.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
@@ -982,6 +988,8 @@ async def preferences_proxy(request: Request, path: str = ""):
 # Agent teams - proxy to agent_engine_service
 @app.api_route("/agent-teams", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 @app.api_route("/agent-teams/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+@app.api_route("/api/agent-teams", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+@app.api_route("/api/agent-teams/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 @edge_capture_decorator("gateway", "agent_teams_proxy")
 async def agent_teams_proxy(request: Request, path: str = ""):
     """Proxy agent-teams requests to agent_engine_service."""
@@ -1051,6 +1059,7 @@ async def openclaw_proxy_legacy(path: str, request: Request):
 async def openclaw_base_proxy_legacy(request: Request):
     """Proxy base /openclaw to openclaw_service."""
     return await proxy("openclaw", "", request)
+
 
 # Legacy agents endpoints - REMOVED: agent_engine_service is now running
 # Routes are handled by routers.py which proxies to agent_engine_service

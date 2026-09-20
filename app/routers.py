@@ -219,6 +219,7 @@ async def websocket_local_llm_tunnel(websocket: WebSocket):
 # {"type":"input"|"resize"|"output",...} contract from
 # RG_Terminal_Sandbox/app/pty_ws.py takes over.
 @router.websocket("/ws/terminal/{terminal_id}")
+@router.websocket("/api/v1/ws/terminal/{terminal_id}")
 async def websocket_terminal_proxy(websocket: WebSocket, terminal_id: str):
     import logging
     import os
@@ -1065,12 +1066,12 @@ async def user_route(path: str, request: Request):
 @router.api_route("/agent-teams", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 async def agent_teams_base_route(request: Request):
     """Agent Teams API base route - routed to agent engine service."""
-    return await proxy("agents", "agents/teams", request)
+    return await proxy("agents", "teams", request)
 
 @router.api_route("/agent-teams/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 async def agent_teams_route(path: str, request: Request):
     """Agent Teams API routes - routed to agent engine service."""
-    return await proxy("agents", f"agents/teams/{path}", request)
+    return await proxy("agents", f"teams/{path}", request)
 
 
 # Settings routes - handled by settings_routes.py (included in main.py)
@@ -1409,19 +1410,17 @@ async def agent_engine_redoc_proxy(request: Request):
 @router.api_route("/agents/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 async def agent_engine_proxy(path: str, request: Request):
     """Proxy all agent requests to agent_engine_service.
-    
+
     This is a production-grade catch-all that forwards all /agents/* requests
     to the agent_engine_service. The service handles routing internally.
-    
+
     Security: Authentication is handled by AuthMiddleware before this route.
     """
-    # Construct target path with trailing slash for base route
-    if not path:
-        target_path = "agents/"
-    else:
-        target_path = f"agents/{path}"
-    
-    return await proxy("agents", target_path, request)
+    # Agent engine router already has /agents prefix, so we pass the path as-is
+    # Empty path should be mapped to "/" on the agent engine (list agents)
+    target_path = "/" if not path else path
+
+    return await proxy("agents", f"agents{target_path}", request)
 
 
 @router.api_route("/agents", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])

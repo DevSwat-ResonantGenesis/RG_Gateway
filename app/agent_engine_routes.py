@@ -127,3 +127,9 @@ async def tools_base(request: Request):
 async def catch_all_agent_routes(path: str, request: Request):
     """Catch-all proxy for any /agents/* routes to agent_engine_service."""
     return await proxy_to_agent_engine(f"agents/{path}", request)
+
+
+@router.api_route("/providers", methods=["GET"])
+async def providers_route(request: Request):
+    """Proxy /agents/providers to agent_engine_service."""
+    return await proxy_to_agent_engine("providers", request)
