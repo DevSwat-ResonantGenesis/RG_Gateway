@@ -3,16 +3,20 @@ import asyncio
 from fastapi import APIRouter, Request
 from fastapi.responses import Response, StreamingResponse
 import httpx
+from .config import settings
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
-AGENT_ENGINE_URL = "http://agent_engine_service:8000"
+AGENT_ENGINE_URL = settings.AGENT_ENGINE_URL
 
 
 async def proxy_to_agent_engine(path: str, request: Request) -> Response:
     """Proxy request to agent engine service."""
     user_id = request.headers.get("x-user-id", "anonymous")
     org_id = request.headers.get("x-org-id", "")
+    
+    # Handle empty path (when accessing /api/v1/agents directly)
+    target_path = f"agents/{path}" if path else "agents"
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -27,7 +31,7 @@ async def proxy_to_agent_engine(path: str, request: Request) -> Response:
             }
             resp = await client.request(
                 method=request.method,
-                url=f"{AGENT_ENGINE_URL}/{path}",
+                url=f"{AGENT_ENGINE_URL}/{target_path}",
                 headers=forwarded,
                 content=await request.body() if request.method in ["POST", "PUT", "PATCH"] else None,
                 params=request.query_params,
@@ -45,39 +49,16 @@ async def proxy_to_agent_engine(path: str, request: Request) -> Response:
         )
 
 
-@router.api_route("/autonomous/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def autonomous_routes(path: str, request: Request):
-    """Proxy autonomous agent routes."""
-    return await proxy_to_agent_engine(f"autonomous/{path}", request)
-
-
-@router.get("/docs")
-async def agent_docs(request: Request):
-    """Proxy to agent engine docs."""
-    return await proxy_to_agent_engine("docs", request)
-
-
-@router.get("/openapi.json")
-async def agent_openapi(request: Request):
-    """Proxy to agent engine OpenAPI spec."""
-    return await proxy_to_agent_engine("openapi.json", request)
-
-
 @router.get("/health")
 async def agent_health(request: Request):
     """Proxy to agent engine health check."""
     return await proxy_to_agent_engine("health", request)
 
 
-# ============== SSE Streaming Proxy ==============
-
+# SSE streaming for agent sessions
 @router.get("/sessions/{session_id}/sse")
 async def sse_session_stream_proxy(session_id: str, request: Request):
-    """SSE streaming proxy for agent session progress.
-    
-    Streams step-by-step progress from agent_engine_service as Server-Sent Events.
-    Uses httpx streaming to avoid buffering the full response.
-    """
+    """SSE streaming proxy for agent session progress."""
     user_id = request.headers.get("x-user-id", "anonymous")
     org_id = request.headers.get("x-org-id", "")
     target_url = f"{AGENT_ENGINE_URL}/agents/sessions/{session_id}/sse"
@@ -103,33 +84,8 @@ async def sse_session_stream_proxy(session_id: str, request: Request):
     )
 
 
-# ============== Catch-all Session & Tool Routes ==============
-
-@router.api_route("/sessions/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def session_routes(path: str, request: Request):
-    """Proxy all /agents/sessions/* routes to agent_engine_service."""
-    return await proxy_to_agent_engine(f"agents/sessions/{path}", request)
-
-
-@router.api_route("/tools/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def tools_routes(path: str, request: Request):
-    """Proxy all /agents/tools/* routes to agent_engine_service."""
-    return await proxy_to_agent_engine(f"agents/tools/{path}", request)
-
-
-@router.api_route("/tools", methods=["GET", "POST"])
-async def tools_base(request: Request):
-    """Proxy /agents/tools to agent_engine_service."""
-    return await proxy_to_agent_engine("agents/tools", request)
-
-
+# Catch-all route for all agent engine paths
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def catch_all_agent_routes(path: str, request: Request):
-    """Catch-all proxy for any /agents/* routes to agent_engine_service."""
-    return await proxy_to_agent_engine(f"agents/{path}", request)
-
-
-@router.api_route("/providers", methods=["GET"])
-async def providers_route(request: Request):
-    """Proxy /agents/providers to agent_engine_service."""
-    return await proxy_to_agent_engine("providers", request)
+async def agent_engine_catchall(path: str, request: Request):
+    """Catch-all proxy for all agent engine routes."""
+    return await proxy_to_agent_engine(path, request)

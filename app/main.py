@@ -488,6 +488,7 @@ from .state_physics_api_v1 import router as state_physics_api_v1_router
 from .code_visualizer_routes import router as code_visualizer_router
 from .rara_routes import router as rara_router
 from .node_routes import router as node_router
+from .agent_engine_routes import router as agent_engine_router
 from .routers import router as api_router
 from .usage_routes import router as usage_router
 from .git_routes import github_router, git_router
@@ -501,6 +502,7 @@ app.include_router(anchors_router, prefix="/api/v1/anchors", tags=["anchors"])
 app.include_router(policies_router, prefix="/api/v1/policies", tags=["policies"])
 app.include_router(rara_router, prefix="/api/v1")
 app.include_router(node_router, prefix="/api/v1")
+app.include_router(agent_engine_router, prefix="/api/v1")
 
 # State Physics UI + API (must be before catch-all)
 app.include_router(state_physics_router)
@@ -608,10 +610,13 @@ async def health_check():
 async def startup_event():
     """Initialize billing cache connection on startup."""
     try:
+        logger.info("[Gateway] Attempting to initialize billing cache...")
         await billing_cache.connect()
         logger.info("[Gateway] Billing cache initialized on startup")
     except Exception as e:
-        logger.warning(f"[Gateway] Failed to initialize billing cache: {e}")
+        logger.error(f"[Gateway] Failed to initialize billing cache: {e}")
+        import traceback
+        logger.error(f"[Gateway] Traceback: {traceback.format_exc()}")
 
 # Shutdown event - disconnect billing cache
 @app.on_event("shutdown")
