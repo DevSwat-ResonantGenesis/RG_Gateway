@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     CODE_EXECUTION_URL: str = _svc_url("code_execution", 8000)
     MARKETPLACE_URL: str = _svc_url("marketplace", 8000)
     OPENCLAW_URL: str = _svc_url("openclaw", 8000)
+    
+    # Redis URL for billing cache
+    REDIS_URL: str = "redis://shared_redis:6379/0"
 
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = 10000  # Very high for testing

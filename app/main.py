@@ -7,6 +7,7 @@ Uses real auth service for authentication with CASCADE edge capture
 import sys
 import os
 import json
+import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response, HTTPException
@@ -15,8 +16,13 @@ from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import time
 
-from .billing_cache import billing_cache
 from .reverse_proxy import proxy, proxy_public
+
+logger = logging.getLogger(__name__)
+
+# Import billing cache after logger is defined
+from .billing_cache import billing_cache
+
 # Add CASCADE edge capture
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 try:
