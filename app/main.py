@@ -8,12 +8,14 @@ import sys
 import os
 import json
 from pathlib import Path
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import time
 
+from .billing_cache import billing_cache
 from .reverse_proxy import proxy, proxy_public
 # Add CASCADE edge capture
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -594,6 +596,26 @@ async def user_health():
 @edge_capture_decorator("gateway", "health")
 async def health_check():
     return {"status": "healthy", "service": "gateway"}
+
+# Startup event - initialize billing cache
+@app.on_event("startup")
+async def startup_event():
+    """Initialize billing cache connection on startup."""
+    try:
+        await billing_cache.connect()
+        logger.info("[Gateway] Billing cache initialized on startup")
+    except Exception as e:
+        logger.warning(f"[Gateway] Failed to initialize billing cache: {e}")
+
+# Shutdown event - disconnect billing cache
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Disconnect billing cache on shutdown."""
+    try:
+        await billing_cache.disconnect()
+        logger.info("[Gateway] Billing cache disconnected on shutdown")
+    except Exception as e:
+        logger.warning(f"[Gateway] Failed to disconnect billing cache: {e}")
 
 # Root endpoint
 @app.get("/")
