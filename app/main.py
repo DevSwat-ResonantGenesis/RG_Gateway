@@ -699,6 +699,9 @@ async def agents_proxy_legacy(path: str, request: Request):
 @edge_capture_decorator("gateway", "agents_base_proxy_legacy")
 async def agents_base_proxy_legacy(request: Request):
     """Proxy base /agents requests without /api/v1 prefix for frontend compatibility."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[LEGACY-AGENTS-PROXY] Legacy /agents route called, method={request.method}")
     return await proxy("agents", "agents/", request)
 
 
