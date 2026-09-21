@@ -15,11 +15,12 @@ async def proxy_to_agent_engine(path: str, request: Request) -> Response:
     user_id = request.headers.get("x-user-id", "anonymous")
     org_id = request.headers.get("x-org-id", "")
     
-    # Handle empty path (when accessing /api/v1/agents directly)
+    # Agent engine uses /agents prefix for its routes
+    # The gateway router has /agents prefix, so we don't double it
     target_path = f"agents/{path}" if path else "agents"
     
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             # Forward all x-* identity headers so agent engine sees roles & privileges
             forwarded = {
                 "x-user-id": user_id,
