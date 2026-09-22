@@ -38,15 +38,6 @@ async def proxy_to_agent_engine(path: str, request: Request) -> Response:
                 params=request.query_params,
             )
             
-            # Debug logging
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"[AGENT-PROXY] URL: {AGENT_ENGINE_URL}/{target_path}")
-            logger.info(f"[AGENT-PROXY] Status: {resp.status_code}")
-            logger.info(f"[AGENT-PROXY] Content length: {len(resp.content)}")
-            logger.info(f"[AGENT-PROXY] Content preview: {resp.content[:200]}")
-            logger.info(f"[AGENT-PROXY] Response: {resp.content}")
-            
             return Response(
                 content=resp.content,
                 status_code=resp.status_code,

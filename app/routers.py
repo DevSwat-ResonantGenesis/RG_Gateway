@@ -1432,12 +1432,6 @@ async def agent_engine_base_proxy(request: Request):
     
     Security: Authentication is handled by AuthMiddleware before this route.
     """
-    import logging
-    logger = logging.getLogger(__name__)
-    print(f"[AGENTS-PROXY] /agents called, user_id={request.headers.get('x-user-id')}, org_id={request.headers.get('x-org-id')}")
-    print(f"[AGENTS-PROXY] request.state.user_id={getattr(request.state, 'user_id', None)}")
-    logger.info(f"[AGENTS-PROXY] /agents called, user_id={request.headers.get('x-user-id')}, org_id={request.headers.get('x-org-id')}")
-    logger.info(f"[AGENTS-PROXY] request.state.user_id={getattr(request.state, 'user_id', None)}")
     return await proxy("agents", "agents/", request)
 
 

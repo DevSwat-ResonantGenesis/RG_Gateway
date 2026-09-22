@@ -88,12 +88,6 @@ async def proxy(service: str, path: str, request: Request) -> Response:
         headers["x-is-superuser"] = "true"
     if "x-unlimited-credits" not in headers and getattr(request.state, "unlimited_credits", False):
         headers["x-unlimited-credits"] = "true"
-    
-    # Debug logging
-    import logging
-    logger = logging.getLogger(__name__)
-    print(f"[REVERSE-PROXY] Forwarding headers: x-user-id={headers.get('x-user-id')}, x-org-id={headers.get('x-org-id')}, x-user-role={headers.get('x-user-role')}")
-    logger.info(f"[REVERSE-PROXY] Forwarding headers: x-user-id={headers.get('x-user-id')}, x-org-id={headers.get('x-org-id')}, x-user-role={headers.get('x-user-role')}")
 
     try:
         async with httpx.AsyncClient(timeout=60.0, follow_redirects=False) as client:

@@ -502,6 +502,7 @@ app.include_router(anchors_router, prefix="/api/v1/anchors", tags=["anchors"])
 app.include_router(policies_router, prefix="/api/v1/policies", tags=["policies"])
 app.include_router(rara_router, prefix="/api/v1")
 app.include_router(node_router, prefix="/api/v1")
+# Include agent_engine_router LAST among /api/v1 routes to avoid conflicts
 app.include_router(agent_engine_router, prefix="/api/v1")
 
 # State Physics UI + API (must be before catch-all)
