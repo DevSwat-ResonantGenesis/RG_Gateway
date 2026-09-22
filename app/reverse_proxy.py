@@ -92,6 +92,7 @@ async def proxy(service: str, path: str, request: Request) -> Response:
     # Debug logging
     import logging
     logger = logging.getLogger(__name__)
+    print(f"[REVERSE-PROXY] Forwarding headers: x-user-id={headers.get('x-user-id')}, x-org-id={headers.get('x-org-id')}, x-user-role={headers.get('x-user-role')}")
     logger.info(f"[REVERSE-PROXY] Forwarding headers: x-user-id={headers.get('x-user-id')}, x-org-id={headers.get('x-org-id')}, x-user-role={headers.get('x-user-role')}")
 
     try:
