@@ -71,22 +71,22 @@ async def proxy(service: str, path: str, request: Request) -> Response:
     if "rg-role" in headers:
         headers["x-user-role"] = headers["rg-role"]
     
-    # Inject user context from auth middleware
-    if hasattr(request.state, "user_id") and request.state.user_id:
+    # Inject user context from auth middleware (only if not already in headers)
+    if "x-user-id" not in headers and hasattr(request.state, "user_id") and request.state.user_id:
         headers["x-user-id"] = request.state.user_id
-    if hasattr(request.state, "org_id") and request.state.org_id:
+    if "x-org-id" not in headers and hasattr(request.state, "org_id") and request.state.org_id:
         headers["x-org-id"] = request.state.org_id
-    if hasattr(request.state, "role") and request.state.role:
+    if "x-user-role" not in headers and hasattr(request.state, "role") and request.state.role:
         headers["x-user-role"] = request.state.role
-    if hasattr(request.state, "email") and request.state.email:
+    if "x-user-email" not in headers and hasattr(request.state, "email") and request.state.email:
         headers["x-user-email"] = request.state.email
-    if hasattr(request.state, "name") and request.state.name:
+    if "x-user-name" not in headers and hasattr(request.state, "name") and request.state.name:
         headers["x-user-name"] = request.state.name
-    if getattr(request.state, "plan", None):
+    if "x-user-plan" not in headers and getattr(request.state, "plan", None):
         headers["x-user-plan"] = str(request.state.plan)
-    if getattr(request.state, "is_superuser", False):
+    if "x-is-superuser" not in headers and getattr(request.state, "is_superuser", False):
         headers["x-is-superuser"] = "true"
-    if getattr(request.state, "unlimited_credits", False):
+    if "x-unlimited-credits" not in headers and getattr(request.state, "unlimited_credits", False):
         headers["x-unlimited-credits"] = "true"
 
     try:
