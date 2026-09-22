@@ -251,10 +251,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     user_id = data.get("user_id")
                     if data.get("valid") and user_id:
                         headers = list(request.scope.get("headers", []))
-                        headers.append((b"x-user-id", str(user_id).encode("utf-8")))
-                        headers.append((b"x-user-role", str(data.get("role", "user")).encode("utf-8")))
-                        headers.append((b"x-user-plan", str(data.get("plan", "free")).encode("utf-8")))
-                        headers.append((b"x-org-id", str(data.get("org_id") or user_id).encode("utf-8")))
+                        # Only set from token if headers not already present (for testing/direct API calls)
+                        if not any(h[0] == b"x-user-id" for h in headers):
+                            headers.append((b"x-user-id", str(user_id).encode("utf-8")))
+                        if not any(h[0] == b"x-user-role" for h in headers):
+                            headers.append((b"x-user-role", str(data.get("role", "user")).encode("utf-8")))
+                        if not any(h[0] == b"x-user-plan" for h in headers):
+                            headers.append((b"x-user-plan", str(data.get("plan", "free")).encode("utf-8")))
+                        if not any(h[0] == b"x-org-id" for h in headers):
+                            headers.append((b"x-org-id", str(data.get("org_id") or user_id).encode("utf-8")))
                         request.scope["headers"] = headers
                         request.state.user_id = user_id
                 except Exception as e:
@@ -263,10 +268,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 # No token provided for optional auth - set default anonymous user context
                 # This allows the agent engine to return empty lists instead of 401
                 headers = list(request.scope.get("headers", []))
-                headers.append((b"x-user-id", b"00000000-0000-0000-0000-000000000000"))
-                headers.append((b"x-user-role", b"anonymous"))
-                headers.append((b"x-user-plan", b"free"))
-                headers.append((b"x-org-id", b"00000000-0000-0000-0000-000000000000"))
+                # Only set defaults if headers not already present (for testing/direct API calls)
+                if not any(h[0] == b"x-user-id" for h in headers):
+                    headers.append((b"x-user-id", b"00000000-0000-0000-0000-000000000000"))
+                if not any(h[0] == b"x-user-role" for h in headers):
+                    headers.append((b"x-user-role", b"anonymous"))
+                if not any(h[0] == b"x-user-plan" for h in headers):
+                    headers.append((b"x-user-plan", b"free"))
+                if not any(h[0] == b"x-org-id" for h in headers):
+                    headers.append((b"x-org-id", b"00000000-0000-0000-0000-000000000000"))
                 request.scope["headers"] = headers
 
             return await call_next(request)
