@@ -492,6 +492,7 @@ from .agent_engine_routes import router as agent_engine_router
 from .routers import router as api_router
 from .usage_routes import router as usage_router
 from .git_routes import github_router, git_router
+from .sunapp_routes import router as sunapp_router
 
 # Include code routes FIRST (before catch-all router)
 app.include_router(github_router, prefix="/api/v1", tags=["github"])
@@ -504,6 +505,8 @@ app.include_router(rara_router, prefix="/api/v1")
 app.include_router(node_router, prefix="/api/v1")
 # Include agent_engine_router LAST among /api/v1 routes to avoid conflicts
 app.include_router(agent_engine_router, prefix="/api/v1")
+# Include sunapp router for Tech AI Audio Podcasts
+app.include_router(sunapp_router, prefix="/api/v1")
 
 # State Physics UI + API (must be before catch-all)
 app.include_router(state_physics_router)
