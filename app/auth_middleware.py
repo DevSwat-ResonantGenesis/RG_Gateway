@@ -145,6 +145,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/resonant-chat/teams",
             "/api/resonant-chat/agents/list",
             "/api/resonant-chat/teams",
+            # SunApp public endpoints (audio generation and explore)
+            "/api/v1/sunapp/",
             # Rabbit: moved to optional_auth (GET public, writes require login)
             # Storage downloads (public for post images)
             "/api/storage/download",

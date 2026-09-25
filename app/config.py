@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     CODE_EXECUTION_URL: str = _svc_url("code_execution", 8000)
     MARKETPLACE_URL: str = _svc_url("marketplace", 8000)
     OPENCLAW_URL: str = _svc_url("openclaw", 8000)
+    SUNAPP_URL: str = os.getenv("GATEWAY_SUNAPP_URL", "http://sunapp_backend:8000")
     
     # Redis URL for billing cache
     REDIS_URL: str = "redis://shared_redis:6379/0"
@@ -93,4 +94,6 @@ SERVICE_MAP = {
     "marketplace": settings.MARKETPLACE_URL,
     # OpenClaw federation service (internal only — zero ports exposed)
     "openclaw": settings.OPENCLAW_URL,
+    # SunApp service for Tech AI Audio Podcasts
+    "sunapp": settings.SUNAPP_URL,
 }

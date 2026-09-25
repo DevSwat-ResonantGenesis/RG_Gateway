@@ -492,7 +492,7 @@ from .agent_engine_routes import router as agent_engine_router
 from .routers import router as api_router
 from .usage_routes import router as usage_router
 from .git_routes import github_router, git_router
-from .sunapp_routes import router as sunapp_router
+from .sunapp_routes import sunapp_router
 
 # Include code routes FIRST (before catch-all router)
 app.include_router(github_router, prefix="/api/v1", tags=["github"])
